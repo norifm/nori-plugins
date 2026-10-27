@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = ["orbit"]
+
+[workspace.package]
+edition = "2021"
+license = "AGPL-3.0-or-later"
+
+[workspace.dependencies]
+# nori's SDK, beside this repository while the plugin API is built (norifm/nori, crates/plugin-sdk).
+nori-plugin-sdk = { path = "../flint-music/crates/plugin-sdk" }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
