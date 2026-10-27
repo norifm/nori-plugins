@@ -1,0 +1,6 @@
+name = "Speed and pitch"
+about = "Playback speed and pitch, skipping silence, and what previous does."
+speed = "Speed"
+pitch = "Pitch"
+skip_silence = "Skip silence"
+previous_skips = "Previous always goes back a song"
