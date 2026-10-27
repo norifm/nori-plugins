@@ -1,0 +1,4 @@
+# One compiler for every release, so a package can be built again from its tag to the same bytes.
+[toolchain]
+channel = "1.97.1"
+targets = ["wasm32-wasip2"]

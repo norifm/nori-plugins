@@ -11,8 +11,21 @@ SDK (`crates/plugin-sdk` in nori; how they work: nori's `docs/developers/plugins
 
 ## The repo
 
-`dist/` is the repo nori lists by default: one `.noriplugin` per plugin (a zip of `plugin.wasm`,
-`strings/` and an optional `icon.svg`) and `index.json`, each plugin's id, name, about, version, plugin
-API version, package and the package's sha256. `python3 tools/pack.py` builds every plugin and writes
-both; publishing is committing `dist/`. Any other repo is the same shape on any static host, added in
-nori by its `index.json`'s URL.
+nori lists this repository by default. A plugin's versions are its GitHub releases, tagged
+`<plugin>-<version>` (`orbit-0.2.0`), each with its `.noriplugin` (a zip of `plugin.wasm`, `strings/`
+and an optional `icon.svg`). `index.json` lists every plugin's id, name, about and source, and every
+version: its plugin API version, release day, package URL and sha256. nori offers the newest version it
+can run, updates a plugin daily from the repo it came from unless it's held, and can go back to an older
+version.
+
+To release: set the version in the plugin's `Cargo.toml`, commit, and push the tag
+`<plugin>-<version>`. The release workflow builds it with the pinned toolchain (`rust-toolchain.toml`),
+packs it (`tools/pack.py`), makes the release and adds it to `index.json`; nobody writes the index by
+hand. Packing is deterministic, so a package can be checked by building its tag again and comparing its
+sha256.
+
+Another repo is the same shape on any static host: an `index.json` and its packages (URLs absolute, or
+relative to the index). nori adds it by the index's URL, after a warning.
+
+`python3 tools/pack.py [name ...]` packs into `dist/` without releasing, for a `.noriplugin` to install
+by hand.

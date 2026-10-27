@@ -1,0 +1,52 @@
+# A plugin's release: push a tag <plugin>-<version> (orbit-0.2.0) once its Cargo.toml says that version.
+# The plugin is built with the pinned toolchain (rust-toolchain.toml), packed, released under the tag with
+# its package as the asset, and added to index.json, the repo nori reads, in a commit to main.
+name: release
+
+on:
+  push:
+    tags: ["*-[0-9]*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      # nori's SDK, beside this repository as the workspace expects it (../flint-music). nori is private:
+      # NORI_READ is a token that can read it.
+      - uses: actions/checkout@v4
+        with:
+          repository: norifm/nori
+          path: nori
+          token: ${{ secrets.NORI_READ }}
+      - run: ln -s "$GITHUB_WORKSPACE/nori" "$GITHUB_WORKSPACE/../flint-music"
+      - name: The tag names a plugin at its version
+        id: tag
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          name="${tag%-*}"
+          version="${tag##*-}"
+          git checkout "$tag" -- "$name"
+          have=$(grep -m1 '^version' "$name/Cargo.toml" | cut -d'"' -f2)
+          [ "$have" = "$version" ] || { echo "$name/Cargo.toml says $have, the tag $version"; exit 1; }
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+      - run: rustup show
+      - run: cargo test -j4 -p ${{ steps.tag.outputs.name }}
+      - run: python3 tools/pack.py ${{ steps.tag.outputs.name }} --release
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/"$GITHUB_REF_NAME".noriplugin --title "$GITHUB_REF_NAME" --notes "${{ steps.tag.outputs.name }} $GITHUB_REF_NAME"
+      - name: List it in index.json
+        run: |
+          git config user.name "nori releases"
+          git config user.email "releases@nori.fm"
+          git add index.json
+          git commit -m "chore: $GITHUB_REF_NAME in the index"
+          git push origin main
