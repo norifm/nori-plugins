@@ -56,6 +56,13 @@
       "id": "fm.nori.showcase",
       "versions": [
         {
+          "version": "0.1.1",
+          "api": 1,
+          "released": "2026-10-28",
+          "url": "https://github.com/norifm/nori-plugins/releases/download/showcase-0.1.1/showcase-0.1.1.noriplugin",
+          "sha256": "22bc9ede5852589bd60c0dfc26e33fb2f744146b7cbe5484b05fc67d3fd91ac7"
+        },
+        {
           "version": "0.1.0",
           "api": 1,
           "released": "2026-10-28",
@@ -65,7 +72,7 @@
       ],
       "name": "Showcase",
       "about": "Shows every place and kind of row a plugin can fill. It changes nothing.",
-      "source": "https://github.com/norifm/nori-plugins/tree/showcase-0.1.0/showcase"
+      "source": "https://github.com/norifm/nori-plugins/tree/showcase-0.1.1/showcase"
     },
     {
       "id": "fm.nori.youtube-music",
