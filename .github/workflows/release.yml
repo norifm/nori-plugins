@@ -40,7 +40,7 @@ jobs:
           git config user.name "nori releases"
           git config user.email "releases@nori.fm"
           # Tags pushed together release side by side; a push that loses lists this one again on the newer main.
-          for try in 1 2 3 4 5; do
+          for try in $(seq 20); do
             git commit -m "chore: $GITHUB_REF_NAME in the index" -- index.json
             git push origin main && exit 0
             git fetch origin main
