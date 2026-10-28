@@ -1,6 +1,8 @@
 name = "Speed and pitch"
 about = "Playback speed and pitch, skipping silence, and what previous does."
+note = "Nothing here changes your saved settings: turn the plugin off and nori's own values are back."
 speed = "Speed"
+times = "×"
 pitch = "Pitch"
 skip_silence = "Skip silence"
 previous_skips = "Previous always goes back a song"

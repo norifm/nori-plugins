@@ -3,7 +3,7 @@
 //! own values back; nothing here touches the samples.
 
 use nori_plugin_sdk::types::Value;
-use nori_plugin_sdk::{rows, settings, Lifecycle, Manifest, Row};
+use nori_plugin_sdk::{rows, settings, Lifecycle, Manifest, Row, RowKind};
 
 /// Each row and the nori value it sets.
 const SETS: [(&str, &str); 4] = [("speed", "playback.speed"), ("pitch", "playback.pitch"), ("skip_silence", "silence.skip"), ("previous_skips", "queue.previousAlwaysSkips")];
@@ -31,8 +31,9 @@ impl Lifecycle for Playback {
 const MANIFEST: Manifest = Manifest {
     overrides: &["playback.speed", "playback.pitch", "silence.skip", "queue.previousAlwaysSkips"],
     rows: &[
-        Row::level("speed", 0.5, 2.0, 0.05, 1.0),
-        Row::level("pitch", 0.5, 2.0, 0.05, 1.0),
+        Row::new("note", RowKind::Note),
+        Row::level("speed", 0.5, 2.0, 0.05, 1.0).unit("times"),
+        Row::level("pitch", 0.5, 2.0, 0.05, 1.0).unit("times"),
         Row::switch("skip_silence", false),
         Row::switch("previous_skips", false),
     ],
