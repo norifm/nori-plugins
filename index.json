@@ -78,6 +78,13 @@
       "id": "fm.nori.youtube-music",
       "versions": [
         {
+          "version": "0.1.2",
+          "api": 1,
+          "released": "2026-10-28",
+          "url": "https://github.com/norifm/nori-plugins/releases/download/youtube-music-0.1.2/youtube-music-0.1.2.noriplugin",
+          "sha256": "50f99bcf857ae49385dc8346e0619e6679dc16c59745dcef4651d11d82c2f182"
+        },
+        {
           "version": "0.1.1",
           "api": 1,
           "released": "2026-10-28",
@@ -87,7 +94,7 @@
       ],
       "name": "YouTube Music",
       "about": "Search and play YouTube Music. Best effort: YouTube can stop it working at any time. Sign in with Google to see your own Home, your library and your likes.",
-      "source": "https://github.com/norifm/nori-plugins/tree/youtube-music-0.1.1/youtube-music"
+      "source": "https://github.com/norifm/nori-plugins/tree/youtube-music-0.1.2/youtube-music"
     }
   ]
 }
