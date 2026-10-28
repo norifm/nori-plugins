@@ -77,9 +77,10 @@ release = "--release" in sys.argv
 names = args or [p.parent.name for p in sorted(root.glob("*/Cargo.toml"))]
 if release and len(names) != 1:
     sys.exit("--release packs one plugin")
-subprocess.run(["cargo", "build", "-j4", "--release", "--target", "wasm32-wasip2", *[a for n in names for a in ("-p", n)]], cwd=root, check=True)
 dist.mkdir(exist_ok=True)
 for name in names:
+    # One plugin per build, as its release builds it: several at once share their dependencies' features.
+    subprocess.run(["cargo", "build", "-j4", "--release", "--target", "wasm32-wasip2", "-p", name], cwd=root, check=True)
     wasm = (root / "target/wasm32-wasip2/release" / f"{name.replace('-', '_')}.wasm").read_bytes()
     plugin_id, version, api = manifest(wasm)
     out = dist / f"{name}-{version}.noriplugin"
