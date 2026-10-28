@@ -12,6 +12,7 @@ written by hand."""
 import datetime
 import hashlib
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -78,9 +79,12 @@ names = args or [p.parent.name for p in sorted(root.glob("*/Cargo.toml"))]
 if release and len(names) != 1:
     sys.exit("--release packs one plugin")
 dist.mkdir(exist_ok=True)
+# Panic messages keep source paths: named the same on every machine, a tag builds to the same bytes anywhere.
+cargo_home = os.environ.get("CARGO_HOME", pathlib.Path.home() / ".cargo")
+env = {**os.environ, "RUSTFLAGS": f"--remap-path-prefix={root}=nori-plugins --remap-path-prefix={cargo_home}=cargo"}
 for name in names:
     # One plugin per build, as its release builds it: several at once share their dependencies' features.
-    subprocess.run(["cargo", "build", "-j4", "--release", "--target", "wasm32-wasip2", "-p", name], cwd=root, check=True)
+    subprocess.run(["cargo", "build", "-j4", "--release", "--target", "wasm32-wasip2", "-p", name], cwd=root, check=True, env=env)
     wasm = (root / "target/wasm32-wasip2/release" / f"{name.replace('-', '_')}.wasm").read_bytes()
     plugin_id, version, api = manifest(wasm)
     out = dist / f"{name}-{version}.noriplugin"

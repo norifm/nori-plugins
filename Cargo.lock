@@ -197,6 +197,7 @@ dependencies = [
 [[package]]
 name = "nori-plugin-sdk"
 version = "0.7.1"
+source = "git+https://github.com/norifm/nori#fa80dac2f1d17cc3824e6e811f501593dccd4d8e"
 dependencies = [
  "wit-bindgen",
  "wit-parser",

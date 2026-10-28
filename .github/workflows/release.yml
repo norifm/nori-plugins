@@ -18,12 +18,6 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-      # nori's SDK, beside this repository as the workspace expects it (../flint-music).
-      - uses: actions/checkout@v4
-        with:
-          repository: norifm/nori
-          path: nori
-      - run: ln -s "$GITHUB_WORKSPACE/nori" "$GITHUB_WORKSPACE/../flint-music"
       - name: The tag names a plugin at its version
         id: tag
         run: |

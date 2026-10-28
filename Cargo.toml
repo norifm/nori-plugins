@@ -7,8 +7,9 @@ edition = "2021"
 license = "AGPL-3.0-or-later"
 
 [workspace.dependencies]
-# nori's SDK, beside this repository while the plugin API is built (norifm/nori, crates/plugin-sdk).
-nori-plugin-sdk = { path = "../flint-music/crates/plugin-sdk" }
+# nori's SDK (norifm/nori, crates/plugin-sdk), at the commit Cargo.lock names; `cargo update -p nori-plugin-sdk`
+# moves it to nori's newest.
+nori-plugin-sdk = { git = "https://github.com/norifm/nori" }
 
 [profile.release]
 opt-level = 3

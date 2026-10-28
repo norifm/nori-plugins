@@ -23,8 +23,15 @@ version.
 To release: set the version in the plugin's `Cargo.toml`, commit, and push the tag
 `<plugin>-<version>`. The release workflow builds it with the pinned toolchain (`rust-toolchain.toml`),
 packs it (`tools/pack.py`), makes the release and adds it to `index.json`; nobody writes the index by
-hand. Packing is deterministic, so a package can be checked by building its tag again and comparing its
-sha256.
+hand. Packing is deterministic on any machine, so a package can be checked by packing its tag again and
+comparing its sha256.
+
+The SDK comes from nori's repository at the commit `Cargo.lock` names; `cargo update -p nori-plugin-sdk`
+moves it to nori's newest. To build against a nori checkout of your own while changing the SDK:
+
+    cargo build --config 'patch."https://github.com/norifm/nori".nori-plugin-sdk.path="../nori/crates/plugin-sdk"'
+
+That rewrites `Cargo.lock` to the local path; don't commit it.
 
 Another repo is the same shape on any static host: an `index.json` and its packages (URLs absolute, or
 relative to the index). nori adds it by the index's URL, after a warning.
