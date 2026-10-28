@@ -182,19 +182,31 @@ pub(crate) fn album_candidates(json: &str, artist: &str, album: &str, tracks: u3
     Ok(ranked.into_iter().take(3).map(|(_, _, id)| id).collect())
 }
 
-/// The square motion video's HLS URL from a catalogue album answer; None if the album has none. Only the
-/// square one aligns with the still cover; the tall one is a different framing.
-pub(crate) fn square_video(json: &str) -> Result<Option<String>, Unreadable> {
+/// A square motion video: its HLS URL, and its first frame as an image URL with `{size}` for the pixels.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Square {
+    pub(crate) video: String,
+    pub(crate) poster: Option<String>,
+}
+
+/// The square motion video from a catalogue album answer; None if the album has none. Only the square
+/// one aligns with the still cover; the tall one is a different framing.
+pub(crate) fn square_video(json: &str) -> Result<Option<Square>, Unreadable> {
     let v: Value = serde_json::from_str(json).map_err(|e| unreadable(&e.to_string()))?;
     let album = v.get("data").and_then(Value::as_array).and_then(|d| d.first()).ok_or_else(|| unreadable("no album in the answer"))?;
     let Some(video) = album.get("attributes").and_then(|a| a.get("editorialVideo")) else {
         return Ok(None);
     };
-    let url = ["motionDetailSquare", "motionSquareVideo1x1"]
-        .iter()
-        .filter_map(|k| video.get(*k)?.get("video")?.as_str())
-        .find(|u| u.starts_with("https://"));
-    Ok(url.map(str::to_string))
+    Ok(["motionDetailSquare", "motionSquareVideo1x1"].iter().filter_map(|k| video.get(*k)).find_map(|m| {
+        let url = m.get("video")?.as_str().filter(|u| u.starts_with("https://"))?;
+        let poster = m.get("previewFrame").and_then(|f| f.get("url")).and_then(Value::as_str).filter(|u| u.starts_with("https://")).map(poster);
+        Some(Square { video: url.to_string(), poster })
+    }))
+}
+
+/// Apple's image template (`{w}x{h}bb.{f}`) as a square JPEG with `{size}` for the pixels.
+fn poster(template: &str) -> String {
+    template.replace("{w}", "{size}").replace("{h}", "{size}").replace("{c}", "bb").replace("{f}", "jpg")
 }
 
 /// The `/assets/index…js` script paths in a web player page, in order, deduplicated.
@@ -359,6 +371,23 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_square_video_brings_its_first_frame() {
+        // Shaped as the catalogue answers it (Midnights, 2026).
+        let json = r#"{"data":[{"id":"1649434004","type":"albums","href":"/v1/catalog/us/albums/1649434004","attributes":{"name":"Midnights","editorialVideo":{
+            "motionDetailSquare":{"previewFrame":{"width":3840,"height":3840,"url":"https://is1-ssl.mzstatic.com/image/thumb/Video122/v4/aa/bb/cc/aabbcc/Job1.jpg/{w}x{h}bb.{f}","bgColor":"35141b","textColor1":"f4d8cc"},
+                "video":"https://mvod.itunes.apple.com/itunes-assets/HLSMusic112/v4/1f/76/00/P1.m3u8"},
+            "motionDetailTall":{"previewFrame":{"width":3072,"height":4096,"url":"https://is1-ssl.mzstatic.com/image/thumb/Video/tall.jpg/{w}x{h}bb.{f}"},
+                "video":"https://mvod.itunes.apple.com/tall.m3u8"}}}}]}"#;
+        assert_eq!(
+            square_video(json).unwrap(),
+            Some(Square {
+                video: "https://mvod.itunes.apple.com/itunes-assets/HLSMusic112/v4/1f/76/00/P1.m3u8".into(),
+                poster: Some("https://is1-ssl.mzstatic.com/image/thumb/Video122/v4/aa/bb/cc/aabbcc/Job1.jpg/{size}x{size}bb.jpg".into()),
+            })
+        );
+    }
+
+    #[test]
     fn answers() {
         assert!(album_candidates("<html>Too many requests</html>", "a", "b", 0, 0).is_err());
         assert!(album_candidates(r#"{"errorMessage":"Invalid value(s) for key(s): [country]"}"#, "a", "b", 0, 0).is_err());
@@ -368,9 +397,9 @@ pub(crate) mod tests {
         let found = r#"{"data":[{"id":"1","type":"albums","attributes":{"name":"X","editorialVideo":{
             "motionDetailTall":{"video":"https://mvod.itunes.apple.com/tall.m3u8"},
             "motionDetailSquare":{"video":"https://mvod.itunes.apple.com/square.m3u8"}}}}]}"#;
-        assert_eq!(square_video(found).unwrap().as_deref(), Some("https://mvod.itunes.apple.com/square.m3u8"));
+        assert_eq!(square_video(found).unwrap(), Some(Square { video: "https://mvod.itunes.apple.com/square.m3u8".into(), poster: None }));
         let other_name = r#"{"data":[{"attributes":{"editorialVideo":{"motionSquareVideo1x1":{"video":"https://a/b.m3u8"}}}}]}"#;
-        assert_eq!(square_video(other_name).unwrap().as_deref(), Some("https://a/b.m3u8"));
+        assert_eq!(square_video(other_name).unwrap().map(|s| s.video).as_deref(), Some("https://a/b.m3u8"));
         let tall_only = r#"{"data":[{"attributes":{"editorialVideo":{"motionDetailTall":{"video":"https://a/t.m3u8"}}}}]}"#;
         assert_eq!(square_video(tall_only).unwrap(), None);
         let none = r#"{"data":[{"attributes":{"name":"Plain"}}]}"#;

@@ -7,7 +7,7 @@
 
 mod parse;
 
-use nori_plugin_sdk::slots::Sleeve;
+use nori_plugin_sdk::slots::{Motion, Sleeve};
 use nori_plugin_sdk::types::{Header, Song};
 use nori_plugin_sdk::{http, log, store, Manifest, Place, Row, RowKind, Slots};
 
@@ -78,7 +78,7 @@ impl Host for Nori {
 
 /// A lookup's outcome; `Failed` is never kept.
 enum Found {
-    Video(String),
+    Video(parse::Square),
     None,
     Failed,
 }
@@ -86,7 +86,7 @@ enum Found {
 /// What the store keeps for an album.
 #[derive(Debug, PartialEq)]
 enum Kept {
-    Video(String),
+    Video(parse::Square),
     /// No video, as of these Unix seconds.
     None(i64),
 }
@@ -94,7 +94,10 @@ enum Kept {
 impl Kept {
     fn bytes(&self) -> Vec<u8> {
         match self {
-            Kept::Video(url) => format!("video {url}").into_bytes(),
+            Kept::Video(sq) => match &sq.poster {
+                Some(p) => format!("video {} {p}", sq.video).into_bytes(),
+                None => format!("video {}", sq.video).into_bytes(),
+            },
             Kept::None(at) => format!("none {at}").into_bytes(),
         }
     }
@@ -102,7 +105,10 @@ impl Kept {
     fn read(bytes: &[u8]) -> Option<Kept> {
         let text = std::str::from_utf8(bytes).ok()?;
         match text.split_once(' ')? {
-            ("video", url) => Some(Kept::Video(url.to_string())),
+            ("video", rest) => {
+                let (video, poster) = rest.split_once(' ').map_or((rest, None), |(v, p)| (v, Some(p.to_string())));
+                Some(Kept::Video(parse::Square { video: video.to_string(), poster }))
+            }
             ("none", at) => Some(Kept::None(at.parse().ok()?)),
             _ => None,
         }
@@ -125,7 +131,7 @@ struct MovingCovers<H = Nori> {
 
 impl<H: Host> MovingCovers<H> {
     /// The HLS URL of `song`'s album's motion video, kept or looked up.
-    fn lookup(&self, song: &Song) -> Option<String> {
+    fn lookup(&self, song: &Song) -> Option<parse::Square> {
         let key = album_key(song);
         match self.host.get(&key).as_deref().and_then(Kept::read) {
             Some(Kept::Video(url)) => return Some(url),
@@ -136,9 +142,9 @@ impl<H: Host> MovingCovers<H> {
             return None;
         }
         match self.find(&song.artist, &song.album, song.year) {
-            Found::Video(url) => {
-                self.host.set(&key, &Kept::Video(url.clone()).bytes());
-                Some(url)
+            Found::Video(sq) => {
+                self.host.set(&key, &Kept::Video(sq.clone()).bytes());
+                Some(sq)
             }
             Found::None => {
                 self.host.set(&key, &Kept::None(self.host.now()).bytes());
@@ -181,7 +187,7 @@ impl<H: Host> MovingCovers<H> {
             }
             match answer.0 {
                 200 => match parse::square_video(&String::from_utf8_lossy(&answer.1)) {
-                    Ok(Some(url)) => return Found::Video(url),
+                    Ok(Some(sq)) => return Found::Video(sq),
                     Ok(None) => {}
                     Err(e) => {
                         self.host.log(&format!("catalogue answer: {}", e.0));
@@ -244,7 +250,7 @@ impl<H: Host> MovingCovers<H> {
 
 impl<H: Host> Slots for MovingCovers<H> {
     fn artwork(&mut self, song: Song) -> Option<Sleeve> {
-        self.lookup(&song).map(Sleeve::Loop)
+        self.lookup(&song).map(|sq| Sleeve::Loop(Motion { video: sq.video, poster: sq.poster }))
     }
 
     /// The loop no longer plays: the album is looked up again next time.

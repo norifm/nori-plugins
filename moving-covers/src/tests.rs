@@ -97,7 +97,8 @@ fn web_token() -> String {
 }
 
 const PAGE: &str = r#"<script type="module" src="/assets/index~1.js"></script>"#;
-const ALBUM: &str = r#"{"data":[{"attributes":{"editorialVideo":{"motionDetailSquare":{"video":"https://mvod.itunes.apple.com/square.m3u8"}}}}]}"#;
+const ALBUM: &str = r#"{"data":[{"attributes":{"editorialVideo":{"motionDetailSquare":{"video":"https://mvod.itunes.apple.com/square.m3u8","previewFrame":{"url":"https://is1-ssl.mzstatic.com/first.jpg/{w}x{h}bb.{f}"}}}}}]}"#;
+const POSTER: &str = "https://is1-ssl.mzstatic.com/first.jpg/{size}x{size}bb.jpg";
 const PLAIN: &str = r#"{"data":[{"attributes":{"name":"Better"}}]}"#;
 
 #[test]
@@ -112,8 +113,9 @@ fn a_found_video_is_kept_until_it_fails() {
     assert!(headers.contains(&("Authorization".into(), format!("Bearer {}", web_token()))));
     drop(asked);
 
-    // Kept: no requests.
-    assert_eq!(looped(&mut c), Some(VIDEO.into()));
+    // Kept, with its first frame: no requests.
+    let Some(Sleeve::Loop(kept)) = c.artwork(song()) else { panic!("no loop kept") };
+    assert_eq!((kept.video.as_str(), kept.poster.as_deref()), (VIDEO, Some(POSTER)));
     assert_eq!(c.asked(), 4);
 
     // Failed: asked again (nothing answers, so a failure, not kept).
@@ -194,7 +196,7 @@ fn a_song_from_outside_the_source_is_kept_by_artist_and_album() {
 /// The loop `c` answers for [`song`].
 fn looped(c: &mut MovingCovers<Fake>) -> Option<String> {
     match c.artwork(song())? {
-        Sleeve::Loop(url) => Some(url),
+        Sleeve::Loop(m) => Some(m.video),
         Sleeve::Still(url) => panic!("a still: {url}"),
     }
 }
