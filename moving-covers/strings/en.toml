@@ -1,0 +1,5 @@
+name = "Moving covers"
+about = "Albums that have a moving cover on Apple Music play it in the player."
+note = "Looks albums up on Apple Music by artist and name. Covers come from Apple; nori sends Apple the album's name and artist."
+mobile_data = "Also on mobile data"
+mobile_data_hint = "A loop is a few megabytes"

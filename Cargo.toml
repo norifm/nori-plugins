@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["orbit", "youtube-music", "playback"]
+members = ["orbit", "youtube-music", "playback", "moving-covers"]
 
 [workspace.package]
 edition = "2021"
