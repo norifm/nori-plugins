@@ -341,14 +341,14 @@ impl<H: Host + Sync> Provider for YouTube<H> {
     /// than [`yt::PART`] (or one without an end) at about the speed it plays, so playback asks in parts;
     /// a download asks for the rest of the file from where it resumes as a range in the URL, which
     /// YouTube sends at full speed.
-    fn source(&mut self, id: String, _max_kbps: u32, use_: StreamUse) -> Result<StreamSource, Error> {
+    fn source(&mut self, id: String, _max_kbps: Option<u32>, use_: StreamUse) -> Result<StreamSource, Error> {
         let s = self.stream(raw(&id)?)?;
         let length = s.format.length.filter(|&n| n > 0);
         let url = match (use_, length) {
             (StreamUse::Download(from), Some(n)) if from < n => format!("{}&range={from}-{}", s.format.url, n - 1),
             _ => s.format.url,
         };
-        Ok(StreamSource { url, headers: Vec::new(), length, part: Some(yt::PART) })
+        Ok(StreamSource { url, length, part: Some(yt::PART) })
     }
 
     fn refused(&mut self, id: String) {

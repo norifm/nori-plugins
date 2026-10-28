@@ -10,13 +10,14 @@ const MAX_ITD_S: f32 = 0.00066;
 /// Samples of the source kept for the far ear's delay.
 const RING: usize = 64;
 
-/// Everything that changes what comes next.
+/// Everything that changes what comes next: numbers alone, with no padding (it is saved as its bytes).
 #[derive(Clone, Copy)]
+#[repr(C)]
 struct Moving {
     /// Turns, 0 to 1: 0 in front, 0.25 right, 0.5 behind.
     phase: f64,
     ring: [f32; RING],
-    at: usize,
+    at: u64,
     /// Each ear's dulling filter.
     dull: [f32; 2],
 }
@@ -41,7 +42,7 @@ impl Orbit {
     fn back(&self, delay: f32) -> f32 {
         let whole = delay as usize;
         let frac = delay - whole as f32;
-        let at = |k: usize| self.s.ring[(self.s.at + RING - k) % RING];
+        let at = |k: usize| self.s.ring[(self.s.at as usize + RING - k) % RING];
         at(whole) * (1.0 - frac) + at(whole + 1) * frac
     }
 }
@@ -64,8 +65,8 @@ impl SoundStage for Orbit {
         let max_delay = (MAX_ITD_S * self.rate).min(RING as f32 - 2.0);
         for (l, r) in left.iter_mut().zip(right.iter_mut()) {
             let source = (*l + *r) * 0.5;
-            self.s.at = (self.s.at + 1) % RING;
-            self.s.ring[self.s.at] = source;
+            self.s.at = (self.s.at + 1) % RING as u64;
+            self.s.ring[self.s.at as usize] = source;
             let angle = self.s.phase * std::f64::consts::TAU;
             // -1 left, 1 right; -1 behind, 1 in front.
             let (side, front) = ((angle.sin() as f32) * self.width, angle.cos() as f32);
@@ -95,11 +96,13 @@ impl SoundStage for Orbit {
     }
 
     fn save(&mut self) -> Vec<u8> {
-        state::save(&self.s)
+        // SAFETY: `Moving` is numbers with no padding.
+        unsafe { state::save(&self.s) }
     }
 
     fn restore(&mut self, bytes: Vec<u8>) {
-        state::restore(&mut self.s, &bytes)
+        // SAFETY: as in `save`; any bytes are numbers.
+        unsafe { state::restore(&mut self.s, &bytes) }
     }
 }
 
