@@ -34,6 +34,13 @@
       "id": "fm.nori.playback",
       "versions": [
         {
+          "version": "0.1.2",
+          "api": 1,
+          "released": "2026-10-28",
+          "url": "https://github.com/norifm/nori-plugins/releases/download/playback-0.1.2/playback-0.1.2.noriplugin",
+          "sha256": "3b090f593e6d127bb44c0bebac8a5d1d98e459964f51948cd95f40e1f693a92b"
+        },
+        {
           "version": "0.1.1",
           "api": 1,
           "released": "2026-10-28",
@@ -43,7 +50,7 @@
       ],
       "name": "Speed and pitch",
       "about": "Playback speed and pitch, skipping silence, and what previous does.",
-      "source": "https://github.com/norifm/nori-plugins/tree/playback-0.1.1/playback"
+      "source": "https://github.com/norifm/nori-plugins/tree/playback-0.1.2/playback"
     },
     {
       "id": "fm.nori.showcase",
