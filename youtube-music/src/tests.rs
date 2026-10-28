@@ -235,26 +235,26 @@ fn signed_out_the_account_has_nothing() {
 #[test]
 fn a_stream_is_resolved_once_until_refused() {
     let mut yt = youtube(vec![answer(200, "player", &[]), answer(200, "player", &[])]);
-    let first = yt.source("yt-dQw4w9WgXcQ".into(), 0, StreamUse::Playback).unwrap();
+    let first = yt.source("yt-dQw4w9WgXcQ".into(), None, StreamUse::Playback).unwrap();
     assert!(first.url.contains("itag=251") && first.url.contains("googlevideo.com"), "{}", first.url);
-    assert_eq!(yt.source("yt-dQw4w9WgXcQ".into(), 128, StreamUse::Playback).unwrap().url, first.url);
+    assert_eq!(yt.source("yt-dQw4w9WgXcQ".into(), Some(128), StreamUse::Playback).unwrap().url, first.url);
     assert_eq!((first.length, first.part), (Some(3_433_755), Some(yt::PART)), "played in parts of its length");
-    let whole = yt.source("yt-dQw4w9WgXcQ".into(), 0, StreamUse::Download(0)).unwrap();
+    let whole = yt.source("yt-dQw4w9WgXcQ".into(), None, StreamUse::Download(0)).unwrap();
     assert_eq!(whole.url, format!("{}&range=0-3433754", first.url), "a download asks it whole");
-    let rest = yt.source("yt-dQw4w9WgXcQ".into(), 0, StreamUse::Download(1000)).unwrap();
+    let rest = yt.source("yt-dQw4w9WgXcQ".into(), None, StreamUse::Download(1000)).unwrap();
     assert_eq!(rest.url, format!("{}&range=1000-3433754", first.url), "a resumed one, the rest");
     assert_eq!(asked(&yt), 1);
     yt.refused("yt-dQw4w9WgXcQ".into());
-    assert!(yt.source("yt-dQw4w9WgXcQ".into(), 0, StreamUse::Playback).is_ok());
+    assert!(yt.source("yt-dQw4w9WgXcQ".into(), None, StreamUse::Playback).is_ok());
     assert_eq!(asked(&yt), 2);
-    assert!(yt.source("yt-gone".into(), 0, StreamUse::Playback).is_err(), "a failed request fails the source");
+    assert!(yt.source("yt-gone".into(), None, StreamUse::Playback).is_err(), "a failed request fails the source");
 }
 
 /// An unplayable video's error carries YouTube's reason.
 #[test]
 fn an_unplayable_video_says_why() {
     let mut yt = youtube(vec![answer(200, "unplayable", &[])]);
-    let e = yt.source("yt-x".into(), 0, StreamUse::Playback).unwrap_err();
+    let e = yt.source("yt-x".into(), None, StreamUse::Playback).unwrap_err();
     assert_eq!((e.kind, e.detail.as_str()), (ErrorKind::Refused, "YouTube will not play it: This video is unavailable"));
 }
 
@@ -499,7 +499,7 @@ fn the_manifest_reaches_every_host() {
     let reaches = |host: &str| MANIFEST.net.iter().any(|d| d.strip_prefix("*.").map_or(host == *d, |base| host.ends_with(&format!(".{base}"))));
     let mut yt = signed_in(601, vec![answer(200, "", &[]), answer(200, "home", &[]), answer(200, "home_more", &[]), answer(200, "queue", &[]), answer(200, "player", &[])]);
     let Page::Feed(feed) = yt.read(Request::HomeFeed).unwrap() else { panic!() };
-    let stream = yt.source("yt-dQw4w9WgXcQ".into(), 0, StreamUse::Playback).unwrap().url;
+    let stream = yt.source("yt-dQw4w9WgXcQ".into(), None, StreamUse::Playback).unwrap().url;
     let covers = feed.iter().flat_map(|s| s.songs.iter().filter_map(|x| x.cover.clone()).chain(s.albums.iter().filter_map(|x| x.cover.clone())));
     for url in urls(&yt).into_iter().chain(covers).chain([stream]) {
         let host = url.strip_prefix("https://").and_then(|r| r.split('/').next()).unwrap();
