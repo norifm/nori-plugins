@@ -45,6 +45,13 @@ jobs:
         run: |
           git config user.name "nori releases"
           git config user.email "releases@nori.fm"
-          git add index.json
-          git commit -m "chore: $GITHUB_REF_NAME in the index"
-          git push origin main
+          # Tags pushed together release side by side; a push that loses lists this one again on the newer main.
+          for try in 1 2 3 4 5; do
+            git commit -m "chore: $GITHUB_REF_NAME in the index" -- index.json
+            git push origin main && exit 0
+            git fetch origin main
+            git reset --hard origin/main
+            git checkout "$GITHUB_REF_NAME" -- ${{ steps.tag.outputs.name }}
+            python3 tools/pack.py ${{ steps.tag.outputs.name }} --release
+          done
+          exit 1
