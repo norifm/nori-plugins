@@ -105,7 +105,7 @@ impl SoundStage for Orbit {
 
 const MANIFEST: Manifest = Manifest {
     stage: Some(Slot::Master),
-    rows: &[Row::level("speed", 0.02, 1.0, 0.01, 0.12), Row::level("width", 0.0, 1.0, 0.05, 0.8)],
+    rows: &[Row::level("speed", 0.02, 1.0, 0.01, 0.12).unit("speed_unit"), Row::level("width", 0.0, 1.0, 0.05, 0.8).hint("width_hint")],
     ..Manifest::new("fm.nori.orbit")
 };
 
