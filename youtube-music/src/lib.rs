@@ -85,7 +85,7 @@ fn song(s: yt::Song) -> Option<Song> {
         artists,
         album,
         album_id,
-        cover: s.thumbnail,
+        cover: s.thumbnail.as_deref().map(cover),
         duration: s.duration,
         track: s.track,
         disc: 0,
@@ -110,7 +110,7 @@ fn album(a: yt::Album) -> Album {
         name: a.title,
         artist: a.artist,
         artist_id: a.artists.first().map(|r| id(&r.id)),
-        cover: a.thumbnail,
+        cover: a.thumbnail.as_deref().map(cover),
         song_count: 0,
         duration: 0,
         year: a.year,
@@ -121,7 +121,14 @@ fn album(a: yt::Album) -> Album {
 }
 
 fn artist(a: yt::Artist) -> Artist {
-    Artist { id: id(&a.id), name: a.name, cover: a.thumbnail, image_url: None, album_count: None, starred: false, external: false }
+    Artist { id: id(&a.id), name: a.name, cover: a.thumbnail.as_deref().map(cover), image_url: None, album_count: None, starred: false, external: false }
+}
+
+/// A thumbnail as nori's cover: its URL with `{size}` where the pixels go (innertube's sizing).
+fn cover(thumbnail: &str) -> String {
+    // Sized at a marker, then the marker made nori's placeholder: innertube says how a size is asked.
+    const MARK: u32 = 987_654_321;
+    yt::thumbnail_url(thumbnail, MARK).replace(&MARK.to_string(), "{size}")
 }
 
 fn found(r: yt::SearchResults, songs_asked: u32, albums: u32, artists: u32) -> Found {
@@ -145,7 +152,7 @@ fn album_page(p: yt::AlbumPage) -> AlbumPage {
 fn artist_page(p: yt::ArtistPage) -> (ArtistPage, ArtistAbout) {
     let about = ArtistAbout {
         biography: p.description,
-        image_url: p.artist.thumbnail.as_deref().map(|c| yt::thumbnail_url(c, 800)),
+        image_url: p.artist.thumbnail.as_deref().map(cover),
         similar: p.similar.into_iter().map(artist).collect(),
     };
     let albums: Vec<Album> = p.albums.into_iter().map(album).collect();
@@ -163,7 +170,7 @@ fn playlist(l: yt::Playlist, songs: &[Song]) -> Playlist {
         owner: l.author,
         song_count: l.song_count.unwrap_or(songs.len() as u32),
         duration: songs.iter().map(|s| s.duration).sum(),
-        cover: l.thumbnail,
+        cover: l.thumbnail.as_deref().map(cover),
     }
 }
 
@@ -348,10 +355,6 @@ impl<H: Host + Sync> Provider for YouTube<H> {
         if let Some(video) = raw_id(&id) {
             self.open.streams.forget(video);
         }
-    }
-
-    fn cover(&mut self, id: String, size: u32) -> Option<String> {
-        Some(yt::thumbnail_url(&id, size))
     }
 
     fn sign_in_done(&mut self, address: String, cookies: String) -> bool {

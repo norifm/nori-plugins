@@ -215,7 +215,7 @@ fn an_artists_about_comes_from_its_page() {
     let mut yt = youtube(vec![answer(200, "artist", &[])]);
     let Page::About(v) = yt.read(Request::ArtistAbout("yt-UCRr1xG_2WIDs18a6cIiCxeA".into())).unwrap() else { panic!() };
     assert!(v.biography.as_deref().is_some_and(|b| b.starts_with("Daft Punk were")));
-    assert!(v.image_url.as_deref().is_some_and(|u| u.ends_with("=w800-h800-p-l90-rj")));
+    assert!(v.image_url.as_deref().is_some_and(|u| u.ends_with("=w{size}-h{size}-p-l90-rj")), "sized by nori");
     assert!(v.similar.len() == 3 && v.similar.iter().all(|a| a.id.starts_with("yt-UC")));
 }
 
@@ -275,10 +275,11 @@ fn a_stream_is_kept_until_shortly_before_it_expires() {
     assert_eq!(streams.0.len(), 1);
 }
 
+/// A sized thumbnail is a template nori fills in; another host's is kept as it is.
 #[test]
-fn covers_are_youtubes_thumbnails() {
-    let mut yt = youtube(vec![]);
-    assert_eq!(yt.cover("https://yt3.googleusercontent.com/abc".into(), 320).as_deref(), Some("https://yt3.googleusercontent.com/abc=w320-h320-p-l90-rj"));
+fn covers_are_youtubes_thumbnails_at_any_size() {
+    assert_eq!(crate::cover("https://yt3.googleusercontent.com/abc"), "https://yt3.googleusercontent.com/abc=w{size}-h{size}-p-l90-rj");
+    assert_eq!(crate::cover("https://i.ytimg.com/vi/x/hq.jpg"), "https://i.ytimg.com/vi/x/hq.jpg");
 }
 
 /// Signing in asks YouTube for the account's name and keeps the session, rotated cookies included;
