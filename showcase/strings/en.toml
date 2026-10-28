@@ -1,0 +1,31 @@
+name = "Showcase"
+about = "Shows every place and kind of row a plugin can fill. It changes nothing."
+
+controls = "Controls"
+switch = "Switch"
+choice = "Choice"
+small = "Small"
+medium = "Medium"
+large = "Large"
+level = "Level"
+level_hint = "Two decimals"
+level_unit = "dB"
+
+words = "Words"
+text = "Text"
+secret = "Secret"
+
+more = "More"
+action = "Show a notice"
+status = "Status"
+note = "A note: plain words under the rows, for what isn't obvious."
+link = "nori's website"
+
+song_facts = "Show song facts"
+count_tracks = "Count tracks"
+
+facts = "{0} by {1}, {2}"
+counted = "{0} tracks in {1} items"
+action_ran = "The action ran"
+row_changed = "{0} changed"
+started_at = "Started at {0}"

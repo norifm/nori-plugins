@@ -8,6 +8,7 @@ SDK (`crates/plugin-sdk` in nori; how they work: nori's `docs/developers/plugins
 | `orbit` | a sound stage: the music circles your head |
 | `playback` | speed, pitch, skipping silence and what previous does, as overrides of nori's values |
 | `youtube-music` | YouTube Music as a provider: a kind of profile to add |
+| `showcase` | one of every place and kind of row a plugin can fill, for trying them out |
 | `moving-covers` | an album's moving cover from Apple Music, in the player's sleeve |
 
 ## The repo
