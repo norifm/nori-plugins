@@ -16,15 +16,16 @@ SDK (`crates/plugin-sdk` in nori; how they work: nori's `docs/developers/plugins
 
 nori lists this repository by default. A plugin's versions are its GitHub releases, tagged
 `<plugin>-<version>` (`orbit-0.2.0`), each with its `.noriplugin` (a zip of `plugin.wasm`, `strings/`
-and an optional `icon.svg`). `index.json` lists every plugin's id, name, about and source, and every
-version: its plugin API version, release day, package URL and sha256. nori offers the newest version it
+and an optional `icon.png` and `README.md`). `index.json` lists every plugin's id, name, about, source,
+README and icon, and every version: its plugin API version, release day, package URL and sha256. nori offers the newest version it
 can run, updates a plugin daily from the repo it came from unless it's held, and can go back to an older
 version.
 
 To release: set the version in the plugin's `Cargo.toml`, commit, and push the tag
 `<plugin>-<version>`. The release workflow builds it with the pinned toolchain (`rust-toolchain.toml`),
 packs it (`tools/pack.py`), makes the release and adds it to `index.json`; nobody writes the index by
-hand. Packing is deterministic on any machine, so a package can be checked by packing its tag again and
+hand; `tools/pack.py --links` points it at each plugin's README and icon. An icon is a 256 px PNG, one
+color on transparent, which nori draws in the page's ink (`icon.svg` is its source). Packing is deterministic on any machine, so a package can be checked by packing its tag again and
 comparing its sha256.
 
 The SDK comes from nori's repository at the commit `Cargo.lock` names; `cargo update -p nori-plugin-sdk`

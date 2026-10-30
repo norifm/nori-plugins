@@ -20,7 +20,9 @@
       ],
       "name": "Moving covers",
       "about": "Albums that have a moving cover on Apple Music play it in the player.",
-      "source": "https://github.com/norifm/nori-plugins/tree/moving-covers-0.1.2/moving-covers"
+      "source": "https://github.com/norifm/nori-plugins/tree/moving-covers-0.1.2/moving-covers",
+      "readme": "https://raw.githubusercontent.com/norifm/nori-plugins/main/moving-covers/README.md",
+      "icon": "https://raw.githubusercontent.com/norifm/nori-plugins/main/moving-covers/icon.png"
     },
     {
       "id": "fm.nori.orbit",
@@ -42,7 +44,9 @@
       ],
       "name": "Orbit",
       "about": "The music circles your head. Best on headphones.",
-      "source": "https://github.com/norifm/nori-plugins/tree/orbit-0.1.3/orbit"
+      "source": "https://github.com/norifm/nori-plugins/tree/orbit-0.1.3/orbit",
+      "readme": "https://raw.githubusercontent.com/norifm/nori-plugins/main/orbit/README.md",
+      "icon": "https://raw.githubusercontent.com/norifm/nori-plugins/main/orbit/icon.png"
     },
     {
       "id": "fm.nori.playback",
@@ -64,7 +68,9 @@
       ],
       "name": "Speed and pitch",
       "about": "Playback speed and pitch, skipping silence, and what previous does.",
-      "source": "https://github.com/norifm/nori-plugins/tree/playback-0.1.2/playback"
+      "source": "https://github.com/norifm/nori-plugins/tree/playback-0.1.2/playback",
+      "readme": "https://raw.githubusercontent.com/norifm/nori-plugins/main/playback/README.md",
+      "icon": "https://raw.githubusercontent.com/norifm/nori-plugins/main/playback/icon.png"
     },
     {
       "id": "fm.nori.showcase",
@@ -86,7 +92,9 @@
       ],
       "name": "Showcase",
       "about": "Shows every place and kind of row a plugin can fill. It changes nothing.",
-      "source": "https://github.com/norifm/nori-plugins/tree/showcase-0.1.1/showcase"
+      "source": "https://github.com/norifm/nori-plugins/tree/showcase-0.1.1/showcase",
+      "readme": "https://raw.githubusercontent.com/norifm/nori-plugins/main/showcase/README.md",
+      "icon": "https://raw.githubusercontent.com/norifm/nori-plugins/main/showcase/icon.png"
     },
     {
       "id": "fm.nori.youtube-music",
@@ -108,7 +116,9 @@
       ],
       "name": "YouTube Music",
       "about": "Search and play YouTube Music. Best effort: YouTube can stop it working at any time. Sign in with Google to see your own Home, your library and your likes.",
-      "source": "https://github.com/norifm/nori-plugins/tree/youtube-music-0.1.2/youtube-music"
+      "source": "https://github.com/norifm/nori-plugins/tree/youtube-music-0.1.2/youtube-music",
+      "readme": "https://raw.githubusercontent.com/norifm/nori-plugins/main/youtube-music/README.md",
+      "icon": "https://raw.githubusercontent.com/norifm/nori-plugins/main/youtube-music/icon.png"
     }
   ]
 }

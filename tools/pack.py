@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Builds plugins for wasm32-wasip2 and packs each as dist/<name>-<version>.noriplugin (its plugin.wasm, its
-strings/ and its icon.svg if it has one); the version is the one the SDK's plugin! wrote into the wasm.
+strings/, and its icon.png and README.md if it has them); the version is the one the SDK's plugin! wrote into the wasm.
 
     tools/pack.py [name ...]             every plugin, or those named
     tools/pack.py name --release         and adds that version to index.json, the repo nori reads, at
                                          the URL of the release tagged <name>-<version>
+    tools/pack.py --links                points index.json at each plugin's README and icon, builds nothing
 
 A release is made by the release workflow when a tag <name>-<version> is pushed; index.json is never
 written by hand."""
@@ -21,6 +22,12 @@ import zipfile
 
 root = pathlib.Path(__file__).resolve().parent.parent
 dist = root / "dist"
+
+
+def links(name):
+    """Plugin `name`'s README and icon on the main branch: what a repo's page shows of every version."""
+    raw = f"https://raw.githubusercontent.com/norifm/nori-plugins/main/{name}"
+    return {key: f"{raw}/{file}" for key, file in (("readme", "README.md"), ("icon", "icon.png")) if (root / name / file).exists()}
 
 
 def leb(b, at):
@@ -82,6 +89,14 @@ dist.mkdir(exist_ok=True)
 # Panic messages keep source paths: named the same on every machine, a tag builds to the same bytes anywhere.
 cargo_home = os.environ.get("CARGO_HOME", pathlib.Path.home() / ".cargo")
 env = {**os.environ, "RUSTFLAGS": f"--remap-path-prefix={root}=nori-plugins --remap-path-prefix={cargo_home}=cargo"}
+if "--links" in sys.argv:
+    index_file = root / "index.json"
+    index = json.loads(index_file.read_text())
+    for entry in index["plugins"]:
+        entry.update(links(entry["source"].rsplit("/", 1)[1]))
+    index_file.write_text(json.dumps(index, indent=2) + "\n")
+    sys.exit()
+
 for name in names:
     # One plugin per build, as its release builds it: several at once share their dependencies' features.
     subprocess.run(["cargo", "build", "-j4", "--release", "--target", "wasm32-wasip2", "-p", name], cwd=root, check=True, env=env)
@@ -89,8 +104,7 @@ for name in names:
     plugin_id, version, api = manifest(wasm)
     out = dist / f"{name}-{version}.noriplugin"
     files = [("plugin.wasm", wasm)] + [(f"strings/{s.name}", s.read_bytes()) for s in sorted((root / name / "strings").glob("*.toml"))]
-    if (root / name / "icon.svg").exists():
-        files.append(("icon.svg", (root / name / "icon.svg").read_bytes()))
+    files += [(extra, (root / name / extra).read_bytes()) for extra in ("icon.png", "README.md") if (root / name / extra).exists()]
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         for path, data in files:
             # A fixed date: the same files pack to the same bytes, and the same sha256.
@@ -107,7 +121,7 @@ for name in names:
         entry = {"id": plugin_id, "versions": []}
         index["plugins"].append(entry)
     # The newest release names the plugin; every version stays listed.
-    entry.update({"name": words.get("name", plugin_id), "about": words.get("about"), "source": f"{REPO}/tree/{tag}/{name}"})
+    entry.update({"name": words.get("name", plugin_id), "about": words.get("about"), "source": f"{REPO}/tree/{tag}/{name}", **links(name)})
     entry["versions"] = [v for v in entry["versions"] if v["version"] != version]
     entry["versions"].insert(0, {
         "version": version,
