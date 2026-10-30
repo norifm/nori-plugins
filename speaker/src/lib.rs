@@ -3,7 +3,7 @@
 //! (docs/developers/plugins.md in nori, "Deep sinks").
 
 use nori_plugin_sdk::audio_out::{self, Encoding, Pace};
-use nori_plugin_sdk::cast::{self, Kind, Target};
+use nori_plugin_sdk::cast::{self, Kind, Look, Target};
 use nori_plugin_sdk::hooks::Event;
 use nori_plugin_sdk::sockets::Tcp;
 use nori_plugin_sdk::types::Service;
@@ -22,6 +22,16 @@ fn name_of(service: &Service) -> String {
     service.txt.iter().find(|(key, _)| key == "name").map_or_else(|| service.name.clone(), |(_, name)| name.clone())
 }
 
+/// What `service` says it is in its TXT.
+fn look_of(service: &Service) -> Look {
+    match service.txt.iter().find(|(key, _)| key == "kind").map(|(_, kind)| kind.as_str()) {
+        Some("headphones") => Look::Headphones,
+        Some("phone") => Look::Phone,
+        Some("tv") => Look::Tv,
+        _ => Look::Speaker,
+    }
+}
+
 #[derive(Default)]
 struct Speaker {
     /// The speakers found, by their mDNS name.
@@ -33,6 +43,9 @@ struct Speaker {
 impl Speaker {
     fn offer(&self) {
         cast::offer(&self.found.iter().map(|s| Target { id: s.name.clone(), name: name_of(s) }).collect::<Vec<_>>());
+        for s in &self.found {
+            cast::show_as(&s.name, look_of(s));
+        }
     }
 
     fn start(&mut self, id: &str) {
