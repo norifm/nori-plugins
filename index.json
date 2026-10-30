@@ -158,6 +158,27 @@
       "icon": "https://raw.githubusercontent.com/norifm/nori-plugins/main/soundcloud/icon.png"
     },
     {
+      "id": "fm.nori.speaker",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "api": 2,
+          "released": "2026-10-30",
+          "url": "https://github.com/norifm/nori-plugins/releases/download/speaker-0.1.0/speaker-0.1.0.noriplugin",
+          "sha256": "b5c7a5ec5be12a18d4ac0e068277c80ef439e91ba73a3d3bcab6a8148a437dd0"
+        }
+      ],
+      "name": "nori speaker",
+      "about": "Plays on a nori speaker on your network.",
+      "source": "https://github.com/norifm/nori-plugins/tree/speaker-0.1.0/speaker",
+      "points": [
+        "lifecycle",
+        "hooks",
+        "slots"
+      ],
+      "readme": "https://raw.githubusercontent.com/norifm/nori-plugins/main/speaker/README.md"
+    },
+    {
       "id": "fm.nori.youtube-music",
       "versions": [
         {
