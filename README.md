@@ -11,6 +11,7 @@ SDK (`crates/plugin-sdk` in nori; how they work: nori's `docs/developers/plugins
 | `soundcloud` | SoundCloud as a provider: search and play, and your likes, playlists and stream when signed in |
 | `showcase` | one of every place and kind of row a plugin can fill, for trying them out |
 | `moving-covers` | an album's moving cover from Apple Music, in the player's sleeve |
+| `speaker` | casts to a nori speaker on your network, an ESP32-S31 board running nori's speaker firmware |
 
 ## The repo
 

@@ -1,0 +1,8 @@
+name = "nori speaker"
+about = "Plays on a nori speaker on your network."
+connect = "Play on the speaker"
+speaker = "Speaker"
+searching = "Looking for a speaker"
+found = "{0}"
+casting = "Playing on {0}"
+unreachable = "Can't reach {0}"
