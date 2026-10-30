@@ -197,7 +197,7 @@ dependencies = [
 [[package]]
 name = "nori-plugin-sdk"
 version = "0.7.2"
-source = "git+https://github.com/norifm/nori#29af76beb9e6072e31c491a3d1253dc296fd9042"
+source = "git+https://github.com/norifm/nori#239f8e327d8bd1f546bee31c4fa2c4f608bc8e4b"
 dependencies = [
  "wit-bindgen",
  "wit-parser",
@@ -336,7 +336,7 @@ dependencies = [
 
 [[package]]
 name = "speaker"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "nori-plugin-sdk",
 ]

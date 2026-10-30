@@ -1,12 +1,13 @@
-//! Finds nori speakers over mDNS and casts to one as a deep sink: the host speaks the protocol, from
-//! the first frame to the buttons (docs/developers/plugins.md in nori, "Deep sinks").
+//! Finds nori speakers over mDNS and offers them in nori's devices list; picking one casts to it as a
+//! deep sink. The host speaks the protocol, from the first frame to the buttons
+//! (docs/developers/plugins.md in nori, "Deep sinks").
 
 use nori_plugin_sdk::audio_out::{self, Encoding, Pace};
-use nori_plugin_sdk::cast::{self, Kind};
+use nori_plugin_sdk::cast::{self, Kind, Target};
 use nori_plugin_sdk::hooks::Event;
 use nori_plugin_sdk::sockets::Tcp;
 use nori_plugin_sdk::types::Service;
-use nori_plugin_sdk::{discovery, log, rows, Hook, Hooks, Lifecycle, Manifest, Place, Row, RowKind, Slots};
+use nori_plugin_sdk::{discovery, log, Hook, Hooks, Lifecycle, Manifest};
 
 /// What the speakers announce.
 const KIND: &str = "_nori-speaker._tcp";
@@ -23,20 +24,20 @@ fn name_of(service: &Service) -> String {
 
 #[derive(Default)]
 struct Speaker {
-    /// The speaker last found.
-    found: Option<Service>,
+    /// The speakers found, by their mDNS name.
+    found: Vec<Service>,
     /// What a cast keeps open while it runs.
     casting: Option<Tcp>,
 }
 
 impl Speaker {
-    fn say(&self, words: &str, name: &str) {
-        rows::set_status("speaker", words, &[name.to_string()]);
+    fn offer(&self) {
+        cast::offer(&self.found.iter().map(|s| Target { id: s.name.clone(), name: name_of(s) }).collect::<Vec<_>>());
     }
 
-    fn start(&mut self) {
-        let Some(found) = self.found.clone() else { return };
-        let name = name_of(&found);
+    fn start(&mut self, id: &str) {
+        self.stop();
+        let Some(found) = self.found.iter().find(|s| s.name == id).cloned() else { return };
         let started = Tcp::connect(&found.host, found.port, CONNECT_MS).and_then(|tcp| {
             audio_out::to_socket(&tcp, Encoding::Pcm16, None, None, Pace::Deep(Some(DEPTH_MS)))?;
             Ok(tcp)
@@ -44,34 +45,24 @@ impl Speaker {
         match started {
             Ok(tcp) => {
                 self.casting = Some(tcp);
-                cast::start(Kind::Sink, &name);
-                self.say("casting", &name);
+                cast::start(Kind::Sink, &name_of(&found));
             }
-            Err(e) => {
-                log::write(log::Level::Warn, &format!("{name}: {:?}", e.kind));
-                self.say("unreachable", &name);
-            }
+            Err(e) => log::write(log::Level::Warn, &format!("{}: {:?}", found.name, e.kind)),
         }
     }
 
     fn stop(&mut self) {
-        cast::end();
-        self.casting = None;
-        match &self.found {
-            Some(found) => self.say("found", &name_of(found)),
-            None => self.say("searching", ""),
+        if self.casting.take().is_some() {
+            audio_out::stop();
+            cast::end();
         }
     }
 }
 
 impl Lifecycle for Speaker {
     fn action(&mut self, id: String) {
-        if id == "connect" {
-            if self.casting.is_some() {
-                self.stop();
-            } else {
-                self.start();
-            }
+        if let Some(speaker) = id.strip_prefix("cast:") {
+            self.start(speaker);
         }
     }
 }
@@ -81,15 +72,15 @@ impl Hooks for Speaker {
         match event {
             // Looks for speakers only while a picker could list them.
             Event::OutputPicker(true) => {
-                self.say("searching", "");
+                self.found.clear();
+                self.offer();
                 discovery::browse(KIND);
             }
             Event::OutputPicker(false) => discovery::stop(KIND),
             Event::Discovered(service) => {
-                if self.casting.is_none() {
-                    self.say("found", &name_of(&service));
-                }
-                self.found = Some(service);
+                self.found.retain(|s| s.name != service.name);
+                self.found.push(service);
+                self.offer();
             }
             Event::MediaButton(button) if button == "cast-stop" => self.stop(),
             _ => {}
@@ -97,15 +88,6 @@ impl Hooks for Speaker {
     }
 }
 
-/// Its rows on the devices sheet are all it fills.
-impl Slots for Speaker {}
+const MANIFEST: Manifest = Manifest { net: &["lan"], hooks: &[Hook::OutputPicker, Hook::MediaButton], ..Manifest::new("fm.nori.speaker") };
 
-const MANIFEST: Manifest = Manifest {
-    net: &["lan"],
-    rows: &[Row::new("speaker", RowKind::Status), Row::new("connect", RowKind::Action)],
-    places: &[Place::Devices],
-    hooks: &[Hook::OutputPicker, Hook::MediaButton],
-    ..Manifest::new("fm.nori.speaker")
-};
-
-nori_plugin_sdk::plugin!(Speaker, MANIFEST, lifecycle, hooks, slots);
+nori_plugin_sdk::plugin!(Speaker, MANIFEST, lifecycle, hooks);
