@@ -1,7 +1,5 @@
 # Speed and pitch
 
-Playback speed and pitch, skipping silence, and what previous does.
-
 These are values nori plays by but has no settings for. The plugin sets them for as long as it is on.
 
 ## Settings

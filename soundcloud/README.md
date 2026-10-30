@@ -1,7 +1,5 @@
 # SoundCloud
 
-Search and play SoundCloud. Sign in to see your likes, your playlists and your stream.
-
 Install it, turn it on, then add a SoundCloud profile.
 
 ## Good to know
