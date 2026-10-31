@@ -32,6 +32,17 @@
       "icon": "https://raw.githubusercontent.com/norifm/nori-plugins/main/moving-covers/icon.png",
       "points": [
         "slots"
+      ],
+      "imports": [
+        "http",
+        "log",
+        "store",
+        "types"
+      ],
+      "net": [
+        "itunes.apple.com",
+        "amp-api.music.apple.com",
+        "music.apple.com"
       ]
     },
     {
@@ -66,7 +77,11 @@
       "icon": "https://raw.githubusercontent.com/norifm/nori-plugins/main/orbit/icon.png",
       "points": [
         "sound-stage"
-      ]
+      ],
+      "imports": [
+        "types"
+      ],
+      "net": []
     },
     {
       "id": "fm.nori.playback",
@@ -100,7 +115,13 @@
       "icon": "https://raw.githubusercontent.com/norifm/nori-plugins/main/playback/icon.png",
       "points": [
         "lifecycle"
-      ]
+      ],
+      "imports": [
+        "rows",
+        "settings",
+        "types"
+      ],
+      "net": []
     },
     {
       "id": "fm.nori.showcase",
@@ -135,7 +156,13 @@
       "points": [
         "lifecycle",
         "slots"
-      ]
+      ],
+      "imports": [
+        "notices",
+        "rows",
+        "types"
+      ],
+      "net": []
     },
     {
       "id": "fm.nori.soundcloud",
@@ -155,7 +182,19 @@
         "provider"
       ],
       "readme": "https://raw.githubusercontent.com/norifm/nori-plugins/main/soundcloud/README.md",
-      "icon": "https://raw.githubusercontent.com/norifm/nori-plugins/main/soundcloud/icon.png"
+      "icon": "https://raw.githubusercontent.com/norifm/nori-plugins/main/soundcloud/icon.png",
+      "imports": [
+        "http",
+        "log",
+        "store",
+        "types"
+      ],
+      "net": [
+        "soundcloud.com",
+        "api-v2.soundcloud.com",
+        "*.sndcdn.com",
+        "*.soundcloud.cloud"
+      ]
     },
     {
       "id": "fm.nori.speaker",
@@ -189,7 +228,18 @@
         "lifecycle",
         "hooks"
       ],
-      "readme": "https://raw.githubusercontent.com/norifm/nori-plugins/main/speaker/README.md"
+      "readme": "https://raw.githubusercontent.com/norifm/nori-plugins/main/speaker/README.md",
+      "imports": [
+        "audio-out",
+        "cast",
+        "discovery",
+        "log",
+        "sockets",
+        "types"
+      ],
+      "net": [
+        "lan"
+      ]
     },
     {
       "id": "fm.nori.youtube-music",
@@ -223,6 +273,22 @@
       "icon": "https://raw.githubusercontent.com/norifm/nori-plugins/main/youtube-music/icon.png",
       "points": [
         "provider"
+      ],
+      "imports": [
+        "http",
+        "log",
+        "store",
+        "types"
+      ],
+      "net": [
+        "music.youtube.com",
+        "www.youtube.com",
+        "accounts.youtube.com",
+        "s.youtube.com",
+        "*.googlevideo.com",
+        "i.ytimg.com",
+        "yt3.googleusercontent.com",
+        "lh3.googleusercontent.com"
       ]
     }
   ]
