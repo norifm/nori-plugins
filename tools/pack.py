@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import tomllib
@@ -68,7 +69,7 @@ def section(wasm, name):
 
 
 def manifest(wasm):
-    """The id, version, API version and extension point bits the SDK's plugin! wrote."""
+    """The id, version, API version, extension point bits and hosts the SDK's plugin! wrote."""
     b = section(wasm, "nori:plugin")
     if b is None:
         sys.exit("no nori:plugin section: built without the SDK's plugin!")
@@ -79,7 +80,30 @@ def manifest(wasm):
         at += 2 + n
         return b[at - n:at].decode()
     plugin_id, version = text(), text()
-    return plugin_id, version, int.from_bytes(b[at:at + 4], "little"), int.from_bytes(b[at + 4:at + 8], "little")
+    api, bits = int.from_bytes(b[at:at + 4], "little"), int.from_bytes(b[at + 4:at + 8], "little")
+    # Past the stage's byte.
+    at += 9
+    count = int.from_bytes(b[at:at + 2], "little")
+    at += 2
+    return plugin_id, version, api, bits, [text() for _ in range(count)]
+
+
+def imports(wasm):
+    """The host interfaces a component imports, by name, from its import sections (10)."""
+    found, at = set(), 8
+    while at < len(wasm):
+        kind = wasm[at]
+        size, start = leb(wasm, at + 1)
+        if kind == 10:
+            found.update(n.decode() for n in re.findall(rb"nori:plugin/([a-z-]+)@", wasm[start:start + size]))
+        at = start + size
+    return sorted(found)
+
+
+def needs(wasm):
+    """What an index says a plugin reaches for, which a client judges it by."""
+    _, _, _, bits, net = manifest(wasm)
+    return {"points": points(bits), "imports": imports(wasm), "net": net}
 
 
 
@@ -104,7 +128,7 @@ if "--links" in sys.argv:
         entry.update(links(name))
         packed = sorted(dist.glob(f"{name}-[0-9]*.noriplugin"))
         if packed:
-            entry["points"] = points(manifest(zipfile.ZipFile(packed[-1]).read("plugin.wasm"))[3])
+            entry.update(needs(zipfile.ZipFile(packed[-1]).read("plugin.wasm")))
     index_file.write_text(json.dumps(index, indent=2) + "\n")
     sys.exit()
 
@@ -112,7 +136,7 @@ for name in names:
     # One plugin per build, as its release builds it: several at once share their dependencies' features.
     subprocess.run(["cargo", "build", "-j4", "--release", "--target", "wasm32-wasip2", "-p", name], cwd=root, check=True, env=env)
     wasm = (root / "target/wasm32-wasip2/release" / f"{name.replace('-', '_')}.wasm").read_bytes()
-    plugin_id, version, api, bits = manifest(wasm)
+    plugin_id, version, api, *_ = manifest(wasm)
     out = dist / f"{name}-{version}.noriplugin"
     files = [("plugin.wasm", wasm)] + [(f"strings/{s.name}", s.read_bytes()) for s in sorted((root / name / "strings").glob("*.toml"))]
     files += [(extra, (root / name / extra).read_bytes()) for extra in ("icon.png", "README.md") if (root / name / extra).exists()]
@@ -132,7 +156,7 @@ for name in names:
         entry = {"id": plugin_id, "versions": []}
         index["plugins"].append(entry)
     # The newest release names the plugin; every version stays listed.
-    entry.update({"name": words.get("name", plugin_id), "about": words.get("about"), "source": f"{REPO}/tree/{tag}/{name}", "points": points(bits), **links(name)})
+    entry.update({"name": words.get("name", plugin_id), "about": words.get("about"), "source": f"{REPO}/tree/{tag}/{name}", **needs(wasm), **links(name)})
     entry["versions"] = [v for v in entry["versions"] if v["version"] != version]
     entry["versions"].insert(0, {
         "version": version,
