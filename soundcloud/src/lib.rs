@@ -4,7 +4,8 @@
 //! and its stream as Home. Best effort: the site's client id is taken from its scripts, as the site does,
 //! and asked for again when SoundCloud stops taking it.
 //!
-//! Tracks only subscribers hear whole (a preview otherwise) are left out.
+//! Tracks only subscribers hear whole (a preview otherwise) or served only encrypted are left out, and
+//! albums of nothing else.
 
 mod api;
 mod host;
@@ -189,7 +190,7 @@ impl<H: Host> SoundCloud<H> {
         let sets: Collection<Set> = parse(&answers[3])?;
         Ok(Found {
             songs: api::songs(&tracks.collection).into_iter().take(songs as usize).collect(),
-            albums: albums_found.collection.iter().take(albums as usize).map(Set::album).collect(),
+            albums: api::albums_of(&albums_found.collection).into_iter().take(albums as usize).collect(),
             artists: users.collection.iter().take(artists as usize).map(User::artist).collect(),
             playlists: sets.collection.iter().map(Set::playlist).collect(),
         })

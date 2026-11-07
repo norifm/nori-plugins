@@ -69,7 +69,8 @@ pub(crate) struct User {
     pub description: Option<String>,
 }
 
-/// A playlist or an album. Long ones list only the first tracks whole, the rest by id alone (no media).
+/// A playlist or an album. Long ones list only the first tracks whole, the rest by id and policy alone
+/// (no media).
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct Set {
     pub id: u64,
@@ -78,7 +79,6 @@ pub(crate) struct Set {
     pub artwork_url: Option<String>,
     pub user: Option<User>,
     pub description: Option<String>,
-    pub track_count: Option<u32>,
     /// Milliseconds.
     #[serde(default)]
     pub duration: u64,
@@ -137,10 +137,25 @@ fn year(date: Option<&str>) -> u32 {
 }
 
 impl Track {
+    /// Whether its policy lets it play whole here; a track listed by id alone has one too.
+    fn allowed(&self) -> bool {
+        !matches!(self.policy.as_deref(), Some("SNIP" | "BLOCK"))
+    }
+
+    /// Whether nori may play it: listed whole, whether it does; listed by id alone, as far as its policy tells.
+    fn may_play(&self) -> bool {
+        if self.media.is_some() {
+            !self.playable().is_empty()
+        } else {
+            self.allowed()
+        }
+    }
+
     /// The transcodings nori plays, best first: HLS of AAC (160 kbps), of Opus (64 kbps), of MP3 (128 kbps,
-    /// gone for many tracks). Each is asked for in turn, as SoundCloud lists some it no longer serves.
+    /// gone for many tracks). Each is asked for in turn, as SoundCloud lists some it no longer serves. A
+    /// label's tracks often have only encrypted HLS (`cbc-encrypted-hls`), which only a browser's DRM opens.
     pub fn playable(&self) -> Vec<&Transcoding> {
-        if matches!(self.policy.as_deref(), Some("SNIP" | "BLOCK")) {
+        if !self.allowed() {
             return Vec::new();
         }
         let rank = |t: &Transcoding| ["audio/mp4", "audio/ogg", "audio/mpeg"].iter().position(|m| t.format.mime_type.starts_with(m));
@@ -197,7 +212,7 @@ impl User {
 
     /// The artist's page: its albums and top songs.
     pub fn page(&self, albums: &[Set], top: &[Track]) -> ArtistPage {
-        let albums: Vec<Album> = albums.iter().map(Set::album).collect();
+        let albums = albums_of(albums);
         let mut artist = self.artist();
         artist.album_count = Some(albums.len() as u32);
         ArtistPage { artist, albums, top_songs: songs(top) }
@@ -208,7 +223,22 @@ impl User {
     }
 }
 
+/// The albums of `sets` nori plays: a label's albums are often previews or encrypted alone.
+pub(crate) fn albums_of<'a>(sets: impl IntoIterator<Item = &'a Set>) -> Vec<Album> {
+    sets.into_iter().filter(|s| s.plays()).map(Set::album).collect()
+}
+
 impl Set {
+    /// Whether nori plays one of the tracks it lists whole; those it lists by id are mostly alike.
+    fn plays(&self) -> bool {
+        self.tracks.iter().any(|t| t.media.is_some() && t.may_play())
+    }
+
+    /// How many of its tracks nori may play.
+    fn playable(&self) -> u32 {
+        self.tracks.iter().filter(|t| t.may_play()).count() as u32
+    }
+
     pub fn album(&self) -> Album {
         Album {
             id: set_id(self.id),
@@ -216,7 +246,7 @@ impl Set {
             artist: self.user.as_ref().map(|u| u.username.clone()).unwrap_or_default(),
             artist_id: self.user.as_ref().map(|u| user_id(u.id)),
             cover: self.artwork_url.as_deref().map(cover),
-            song_count: self.track_count.unwrap_or(0),
+            song_count: self.playable(),
             duration: (self.duration / 1000) as u32,
             year: year(self.release_date.as_deref().or(self.display_date.as_deref())),
             genre: None,
@@ -231,7 +261,7 @@ impl Set {
             name: self.title.clone(),
             comment: self.description.clone().filter(|d| !d.is_empty()),
             owner: self.user.as_ref().map(|u| u.username.clone()),
-            song_count: self.track_count.unwrap_or(self.tracks.len() as u32),
+            song_count: self.playable(),
             duration: (self.duration / 1000) as u32,
             cover: self.artwork_url.as_deref().map(cover),
         }
@@ -242,19 +272,19 @@ impl Set {
         songs(self.tracks.iter().filter_map(|t| if t.media.is_some() { Some(t) } else { filled.iter().find(|f| f.id == t.id) }))
     }
 
-    /// The ids of the tracks it lists only by id.
+    /// The ids of the tracks it lists only by id whose policy lets them play.
     pub fn unlisted(&self) -> Vec<u64> {
-        self.tracks.iter().filter(|t| t.media.is_none()).map(|t| t.id).collect()
+        self.tracks.iter().filter(|t| t.media.is_none() && t.allowed()).map(|t| t.id).collect()
     }
 
     pub fn album_page(&self, filled: &[Track]) -> AlbumPage {
         let songs = self.songs(filled);
-        AlbumPage { album: self.album(), songs }
+        AlbumPage { album: Album { song_count: songs.len() as u32, ..self.album() }, songs }
     }
 
     pub fn playlist_page(&self, filled: &[Track]) -> PlaylistPage {
         let songs = self.songs(filled);
-        PlaylistPage { playlist: self.playlist(), songs }
+        PlaylistPage { playlist: Playlist { song_count: songs.len() as u32, ..self.playlist() }, songs }
     }
 }
 

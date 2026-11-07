@@ -95,6 +95,11 @@ fn aac() -> &'static str {
     r#"{"url":"https://api-v2.soundcloud.com/media/soundcloud:tracks:1/b/stream/hls","snipped":false,"format":{"protocol":"hls","mime_type":"audio/mp4; codecs=\"mp4a.40.2\""}}"#
 }
 
+/// What a label's track often has alone: HLS that only a browser's DRM opens.
+fn encrypted() -> &'static str {
+    r#"{"url":"https://api-v2.soundcloud.com/media/soundcloud:tracks:1/d/stream/hls","snipped":false,"format":{"protocol":"cbc-encrypted-hls","mime_type":"audio/mp4; codecs=\"mp4a.40.2\""}}"#
+}
+
 /// A track's JSON: `n`, its policy and transcodings.
 fn track(n: u64, policy: &str, transcodings: &[&str]) -> String {
     format!(
@@ -112,7 +117,8 @@ fn a_track_is_a_song_only_when_it_plays_whole() {
     let fake = Fake::default();
     let snipped = mp3().replace(r#""snipped":false"#, r#""snipped":true"#);
     fake.api("/search/tracks?q=lo%20fi&limit=10", &page(&[track(1, "ALLOW", &[aac(), mp3()]), track(2, "SNIP", &[mp3()]), track(3, "BLOCK", &[mp3()]), track(4, "ALLOW", &[aac()]), track(5, "ALLOW", &[&snipped]), track(6, "ALLOW", &[r#"{"url":"u","format":{"protocol":"progressive","mime_type":"audio/mpeg"}}"#])]));
-    fake.api("/search/albums?q=lo%20fi&limit=2", &page(&[r#"{"id":40,"title":"First","track_count":3,"duration":600000,"user":{"id":7,"username":"maker"},"release_date":"2023-04-01"}"#.into()]));
+    let stubs = |policy: &str| format!(r#"{},{{"id":9,"policy":"{policy}"}},{{"id":10,"policy":"{policy}"}}"#, track(8, policy, &[mp3()]));
+    fake.api("/search/albums?q=lo%20fi&limit=2", &page(&[format!(r#"{{"id":39,"title":"Previews","tracks":[{}]}}"#, stubs("SNIP")), format!(r#"{{"id":40,"title":"First","track_count":3,"duration":600000,"user":{{"id":7,"username":"maker"}},"release_date":"2023-04-01","tracks":[{}]}}"#, stubs("ALLOW"))]));
     fake.api("/search/users?q=lo%20fi&limit=3", &page(&[r#"{"id":7,"username":"maker","avatar_url":"https://i1.sndcdn.com/avatars-7-large.jpg"}"#.into()]));
     fake.api("/search/playlists_without_albums?q=lo%20fi&limit=10", &page(&[]));
     let mut p = plugin(fake);
@@ -122,7 +128,7 @@ fn a_track_is_a_song_only_when_it_plays_whole() {
     assert_eq!((s.title.as_str(), s.artist.as_str(), s.artist_id.as_deref(), s.album.as_str()), ("Track 1", "The Maker", Some("sc-u7"), "First"));
     assert_eq!((s.duration, s.year, s.genre.as_deref(), s.explicit), (185, 2023, Some("Lo-fi"), Explicit::Explicit));
     assert_eq!(s.cover.as_deref(), Some("https://i1.sndcdn.com/artworks-1-t500x500.jpg"));
-    assert_eq!((f.albums[0].id.as_str(), f.albums[0].song_count, f.albums[0].year), ("sc-s40", 3, 2023));
+    assert_eq!(f.albums.iter().map(|a| (a.id.as_str(), a.song_count, a.year)).collect::<Vec<_>>(), [("sc-s40", 3, 2023)], "an album of previews is left out");
     assert_eq!(f.artists[0].id, "sc-u7");
 }
 
@@ -161,12 +167,33 @@ fn the_client_id_comes_from_the_sites_scripts_and_again_when_refused() {
 #[test]
 fn a_set_fills_in_the_tracks_it_lists_by_id() {
     let fake = Fake::default();
-    fake.api("/playlists/40", &format!(r#"{{"id":40,"title":"Mix","track_count":3,"user":{{"id":7,"username":"maker"}},"tracks":[{},{{"id":2}},{{"id":3}}]}}"#, track(1, "ALLOW", &[mp3()])));
+    fake.api("/playlists/40", &format!(r#"{{"id":40,"title":"Mix","track_count":4,"user":{{"id":7,"username":"maker"}},"tracks":[{},{{"id":2}},{{"id":3}},{{"id":6,"policy":"SNIP"}}]}}"#, track(1, "ALLOW", &[mp3()])));
     fake.api("/tracks?ids=2,3", &format!("[{},{}]", track(3, "ALLOW", &[mp3()]), track(2, "ALLOW", &[mp3()])));
     let mut p = plugin(fake);
     let Ok(Page::Playlist(l)) = p.read(Request::Playlist("sc-s40".into())) else { panic!("a playlist") };
     assert_eq!(l.songs.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), ["sc-t1", "sc-t2", "sc-t3"], "in the set's order");
     assert_eq!((l.playlist.name.as_str(), l.playlist.owner.as_deref(), l.playlist.song_count), ("Mix", Some("maker"), 3));
+}
+
+#[test]
+fn an_album_counts_and_lists_only_what_plays_whole() {
+    let fake = Fake::default();
+    let set = |n: u64, first: String, rest: &str| format!(r#"{{"id":{n},"title":"Album {n}","track_count":4,"user":{{"id":7,"username":"maker"}},"tracks":[{first},{rest}]}}"#);
+    let previews = set(40, track(1, "SNIP", &[mp3()]), r#"{"id":2,"policy":"SNIP"}"#);
+    let encrypted_only = set(41, track(3, "ALLOW", &[encrypted()]), r#"{"id":4,"policy":"ALLOW"}"#);
+    let mixed = set(42, track(5, "ALLOW", &[encrypted(), mp3()]), r#"{"id":6,"policy":"ALLOW"},{"id":7,"policy":"ALLOW"},{"id":8,"policy":"SNIP"}"#);
+    fake.api("/users/7", r#"{"id":7,"username":"maker"}"#);
+    fake.api("/users/7/albums?limit=50", &page(&[previews, encrypted_only, mixed.clone()]));
+    fake.api("/users/7/tracks?limit=50", &page(&[]));
+    fake.api("/playlists/42", &mixed);
+    fake.api("/tracks?ids=6,7", &format!("[{},{}]", track(6, "ALLOW", &[mp3()]), track(7, "ALLOW", &[encrypted()])));
+    let mut p = plugin(fake);
+    let Ok(Page::Artist(a)) = p.read(Request::Artist("sc-u7".into())) else { panic!("an artist") };
+    assert_eq!(a.albums.iter().map(|a| (a.id.as_str(), a.song_count)).collect::<Vec<_>>(), [("sc-s42", 3)], "albums of previews or of encrypted streams are left out; counted as far as the listing tells");
+    assert_eq!(a.artist.album_count, Some(1));
+    let Ok(Page::Album(al)) = p.read(Request::Album("sc-s42".into())) else { panic!("an album") };
+    assert_eq!(al.songs.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), ["sc-t5", "sc-t6"]);
+    assert_eq!(al.album.song_count, 2);
 }
 
 #[test]
