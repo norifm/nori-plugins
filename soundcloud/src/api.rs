@@ -288,6 +288,58 @@ impl Set {
     }
 }
 
+/// A pairing code, as `/pairing/codes` makes it.
+#[derive(Debug, Deserialize)]
+pub(crate) struct Pairing {
+    pub code: String,
+    pub poll_token: String,
+    /// Seconds, as a string or a number.
+    pub poll_interval_seconds: Option<serde_json::Value>,
+}
+
+impl Pairing {
+    /// Seconds between checks, when SoundCloud says.
+    pub fn every(&self) -> Option<u32> {
+        let every = match self.poll_interval_seconds.as_ref()? {
+            serde_json::Value::String(s) => s.trim().parse().ok(),
+            n => n.as_u64().and_then(|n| u32::try_from(n).ok()),
+        };
+        every.filter(|&n| n > 0)
+    }
+}
+
+/// How a pairing code stands: `created`, `activated` or `expired`.
+#[derive(Debug, Deserialize)]
+pub(crate) struct Paired {
+    #[serde(default)]
+    pub status: String,
+}
+
+/// The answer of `/pairing/sign-in`: the token, in its session or alone.
+#[derive(Debug, Deserialize)]
+pub(crate) struct PairedSession {
+    session: Option<Token>,
+    access_token: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Token {
+    access_token: Option<String>,
+}
+
+impl PairedSession {
+    pub fn token(self) -> Option<String> {
+        self.session.and_then(|s| s.access_token).or(self.access_token).filter(|t| !t.is_empty())
+    }
+}
+
+/// `n` as a version 4 UUID: its version and variant bits set.
+pub(crate) fn uuid(n: u128) -> String {
+    let n = (n & !(0xF << 76) | (0x4 << 76)) & !(0x3 << 62) | (0x2 << 62);
+    let hex = format!("{n:032x}");
+    format!("{}-{}-{}-{}-{}", &hex[..8], &hex[8..12], &hex[12..16], &hex[16..20], &hex[20..])
+}
+
 /// The site's client id, in one of the scripts its page loads: `client_id:"<32 characters>"`.
 pub(crate) fn client_id_in(script: &str) -> Option<String> {
     let at = script.find("client_id:\"")? + "client_id:\"".len();

@@ -1,8 +1,8 @@
 //! SoundCloud as a nori provider, over the API its own site speaks: search, artists, albums and
-//! playlists, and played as HLS of MP3 segments, which nori reads as one stream. Signed in (the site's
-//! own sign-in page, its `oauth_token` cookie) it adds the account's likes as favorites, its playlists
-//! and its stream as Home. Best effort: the site's client id is taken from its scripts, as the site does,
-//! and asked for again when SoundCloud stops taking it.
+//! playlists, and played as HLS of MP3 segments, which nori reads as one stream. Signed in (a code allowed
+//! in any browser, or the site's own sign-in page and its `oauth_token` cookie) it adds the account's
+//! likes as favorites, its playlists and its stream as Home. Best effort: the site's client id is taken
+//! from its scripts, as the site does, and asked for again when SoundCloud stops taking it.
 //!
 //! Tracks only subscribers hear whole (a preview otherwise) or served only encrypted are left out, and
 //! albums of nothing else.
@@ -12,18 +12,25 @@ mod host;
 
 use nori_plugin_sdk::http::{self, Method};
 use nori_plugin_sdk::provider::{
-    AccountState, Change, Field, FieldSpec, LibrarySection, Page, Profile, ProfileRules, ProviderInfo, Request, SignInResult, SignInWay, StarKind, StreamSource, StreamUse,
+    AccountState, Change, CodeCheck, Field, FieldSpec, LibrarySection, Page, Profile, ProfileRules, ProviderInfo, Request, SignInCode, SignInResult, SignInWay, StarKind, StreamSource, StreamUse,
 };
 use nori_plugin_sdk::types::{Error, ErrorKind, Found, Header, Shelf, Song};
 use nori_plugin_sdk::{Manifest, Provider};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use api::{Collection, Like, Located, Posted, Set, Track, User, API};
+use api::{Collection, Like, Located, Paired, PairedSession, Pairing, Posted, Set, Track, User, API};
 use host::{Host, Nori};
 
 const SITE: &str = "https://soundcloud.com/";
 const SIGN_IN_PAGE: &str = "https://soundcloud.com/signin";
+const PAIRING: &str = "https://api-reg.soundcloud.com/pairing";
+/// Where the user allows a pairing code.
+const ACTIVATE: &str = "https://secure.soundcloud.com/activate/";
+/// The store key of the id SoundCloud knows this device by, shared by every profile.
+const DEVICE_ID_KEY: &str = "device-id";
+/// Seconds between a code's checks when SoundCloud doesn't say.
+const CHECK_EVERY: u32 = 3;
 /// The store key of the site's client id, shared by every profile.
 const CLIENT_ID_KEY: &str = "client-id";
 /// Tracks asked for by id at once.
@@ -155,6 +162,71 @@ impl<H: Host> SoundCloud<H> {
         }
     }
 
+    /// The id SoundCloud knows this device by: the one kept, or a new one.
+    fn device_id(&self) -> String {
+        if let Some(id) = self.host.get(DEVICE_ID_KEY).and_then(|v| String::from_utf8(v).ok()) {
+            return id;
+        }
+        let id = api::uuid(random());
+        self.host.set(DEVICE_ID_KEY, id.as_bytes());
+        id
+    }
+
+    /// `body` posted as JSON to `path` under the pairing API with the client id.
+    fn post(&mut self, path: &str, client_id: &str, body: serde_json::Value) -> Result<http::Response, Error> {
+        let mut request = request(Method::Post, &address(&format!("{PAIRING}{path}"), client_id), None);
+        request.headers.push(Header { name: "Content-Type".into(), value: "application/json".into() });
+        request.body = Some(body.to_string().into_bytes());
+        self.host.fetch_all(vec![request]).remove(0)
+    }
+
+    /// Signs in with `token`, checked by asking SoundCloud who it is, and keeps the session.
+    fn sign_in_with(&mut self, token: String) -> SignInResult {
+        let client_id = match self.client_id(false) {
+            Ok(id) => id,
+            Err(e) => return SignInResult::Unreachable(e.detail),
+        };
+        let answer = match self.host.fetch_all(vec![get(&address("/me", &client_id), Some(&token))]).remove(0) {
+            Ok(a) => a,
+            Err(e) => return SignInResult::Unreachable(e.detail),
+        };
+        match answer.status {
+            200..=299 => match parse::<User>(&answer.body) {
+                Ok(me) => {
+                    self.keep(Some(Session { token, user: me.id, name: me.username.clone(), ended: false }));
+                    SignInResult::SignedIn(me.username)
+                }
+                Err(e) => SignInResult::Unreachable(e.detail),
+            },
+            401 | 403 => SignInResult::Refused,
+            code => SignInResult::Unreachable(status(code).detail),
+        }
+    }
+
+    /// Signs in with the token SoundCloud gives for pairing code `code`, once allowed.
+    fn sign_in_paired(&mut self, code: &str, poll_token: &str) -> SignInResult {
+        let client_id = match self.client_id(false) {
+            Ok(id) => id,
+            Err(e) => return SignInResult::Unreachable(e.detail),
+        };
+        let body = serde_json::json!({ "client_id": client_id, "pairing_code": code, "poll_token": poll_token, "scope": "" });
+        let answer = match self.post("/sign-in", &client_id, body) {
+            Ok(a) => a,
+            Err(e) => return SignInResult::Unreachable(e.detail),
+        };
+        match answer.status {
+            200..=299 => match parse::<PairedSession>(&answer.body) {
+                Ok(paired) => match paired.token() {
+                    Some(token) => self.sign_in_with(token),
+                    None => SignInResult::Refused,
+                },
+                Err(e) => SignInResult::Unreachable(e.detail),
+            },
+            400..=499 => SignInResult::Refused,
+            code => SignInResult::Unreachable(status(code).detail),
+        }
+    }
+
     fn ask<T: DeserializeOwned>(&mut self, path: String) -> Result<T, Error> {
         parse(&self.ask_all(Method::Get, &[path])?.remove(0))
     }
@@ -243,9 +315,16 @@ fn get(url: &str, token: Option<&str>) -> http::Request {
     request(Method::Get, url, token)
 }
 
+/// 128 random bits, from std's hasher seeds, which WASI's randomness makes.
+fn random() -> u128 {
+    use std::hash::BuildHasher;
+    let half = || std::collections::hash_map::RandomState::new().hash_one(()) as u128;
+    half() << 64 | half()
+}
+
 impl<H: Host> Provider for SoundCloud<H> {
     fn info(&mut self) -> Option<ProviderInfo> {
-        Some(ProviderInfo { fields: vec![FieldSpec { field: Field::Name, advanced: false }], sign_in: vec![SignInWay::WebPage(SIGN_IN_PAGE.to_string()), SignInWay::Paste] })
+        Some(ProviderInfo { fields: vec![FieldSpec { field: Field::Name, advanced: false }], sign_in: vec![SignInWay::Code, SignInWay::WebPage(SIGN_IN_PAGE.to_string()), SignInWay::Paste] })
     }
 
     fn ready(&mut self, _: Profile) -> bool {
@@ -338,24 +417,44 @@ impl<H: Host> Provider for SoundCloud<H> {
     /// SoundCloud who it is.
     fn sign_in(&mut self, answer: String) -> Option<SignInResult> {
         let Some(token) = api::token_in(&answer).or_else(|| Some(answer.trim().to_string()).filter(|t| t.starts_with("2-"))) else { return Some(SignInResult::NoSession) };
-        let client_id = match self.client_id(false) {
-            Ok(id) => id,
-            Err(e) => return Some(SignInResult::Unreachable(e.detail)),
+        Some(self.sign_in_with(token))
+    }
+
+    /// A pairing code for this device, asked once more with a new client id when refused.
+    fn start_code(&mut self) -> Result<SignInCode, Error> {
+        let device = serde_json::json!({ "device": { "id": self.device_id(), "type": "cli", "name": "nori" } });
+        let mut anew = false;
+        let answer = loop {
+            let client_id = self.client_id(anew)?;
+            let answer = self.post("/codes", &client_id, device.clone())?;
+            if matches!(answer.status, 401 | 403) && !anew {
+                anew = true;
+                continue;
+            }
+            break answer;
         };
-        let answer = match self.host.fetch_all(vec![get(&address("/me", &client_id), Some(&token))]).remove(0) {
-            Ok(a) => a,
-            Err(e) => return Some(SignInResult::Unreachable(e.detail)),
-        };
+        if !(200..300).contains(&answer.status) {
+            self.host.log(&format!("SoundCloud: a pairing code answered {}", answer.status));
+            return Err(status(answer.status));
+        }
+        let pairing: Pairing = parse(&answer.body)?;
+        Ok(SignInCode { url: format!("{ACTIVATE}{}", api::escape(&pairing.code)), every: pairing.every().unwrap_or(CHECK_EVERY), lasts: None, state: pairing.poll_token, code: pairing.code })
+    }
+
+    /// Waiting while SoundCloud doesn't answer or the code is not allowed yet; expired when SoundCloud
+    /// says so or refuses the code.
+    fn check_code(&mut self, code: SignInCode) -> Option<CodeCheck> {
+        let Ok(client_id) = self.client_id(false) else { return Some(CodeCheck::Waiting) };
+        let path = format!("{PAIRING}/codes/{}?poll_token={}", api::escape(&code.code), api::escape(&code.state));
+        let Ok(answer) = self.host.fetch_all(vec![get(&address(&path, &client_id), None)]).remove(0) else { return Some(CodeCheck::Waiting) };
         Some(match answer.status {
-            200..=299 => match parse::<User>(&answer.body) {
-                Ok(me) => {
-                    self.keep(Some(Session { token, user: me.id, name: me.username.clone(), ended: false }));
-                    SignInResult::SignedIn(me.username)
-                }
-                Err(e) => SignInResult::Unreachable(e.detail),
+            200..=299 => match parse::<Paired>(&answer.body).map(|p| p.status) {
+                Ok(s) if s == "activated" => CodeCheck::Done(self.sign_in_paired(&code.code, &code.state)),
+                Ok(s) if s == "expired" => CodeCheck::Expired,
+                _ => CodeCheck::Waiting,
             },
-            401 | 403 => SignInResult::Refused,
-            code => SignInResult::Unreachable(status(code).detail),
+            400..=403 | 405..=499 => CodeCheck::Expired,
+            _ => CodeCheck::Waiting,
         })
     }
 
@@ -382,6 +481,8 @@ const MANIFEST: Manifest = Manifest {
     net: &[
         "soundcloud.com",
         "api-v2.soundcloud.com",
+        // Pairing codes.
+        "api-reg.soundcloud.com",
         // The site's scripts, artwork and avatars.
         "*.sndcdn.com",
         // The segments.
