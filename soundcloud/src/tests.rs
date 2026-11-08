@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use nori_plugin_sdk::http;
-use nori_plugin_sdk::provider::{AccountState, Change, Page, Profile, Request, SignInResult, StarKind, StreamUse};
+use nori_plugin_sdk::provider::{AccountState, Change, CodeCheck, Page, Profile, Request, SignInCode, SignInResult, StarKind, StreamUse};
 use nori_plugin_sdk::types::{Error, Explicit};
 use nori_plugin_sdk::Provider;
 
@@ -10,13 +10,14 @@ use crate::host::Host;
 use crate::SoundCloud;
 
 /// Answers by URL, without its client id: each a status and a body. Every request kept as (method, URL,
-/// Authorization header).
+/// Authorization header), and each body as (URL, JSON); a body not sent as JSON is refused.
 #[derive(Default)]
 struct Fake {
     answers: RefCell<HashMap<String, (u16, String)>>,
     /// The client id the API takes; any other is refused.
     takes: RefCell<String>,
     asked: RefCell<Vec<(http::Method, String, Option<String>)>>,
+    posted: RefCell<Vec<(String, serde_json::Value)>>,
     store: RefCell<HashMap<String, Vec<u8>>>,
 }
 
@@ -37,6 +38,12 @@ impl Host for Fake {
             .map(|r| {
                 let auth = r.headers.iter().find(|h| h.name == "Authorization").map(|h| h.value.clone());
                 self.asked.borrow_mut().push((r.method, r.url.clone(), auth));
+                if let Some(body) = &r.body {
+                    if !r.headers.iter().any(|h| h.name == "Content-Type" && h.value == "application/json") {
+                        return Ok(http::Response { status: 415, headers: Vec::new(), body: Vec::new() });
+                    }
+                    self.posted.borrow_mut().push((r.url.clone(), serde_json::from_slice(body).expect("JSON")));
+                }
                 let (url, client_id) = match r.url.split_once("client_id=") {
                     Some((u, id)) => (u.trim_end_matches(['?', '&']).to_string(), Some(id.to_string())),
                     None => (r.url.clone(), None),
@@ -228,4 +235,89 @@ fn a_refused_session_ends_and_signed_out_there_is_nowhere_to_like() {
     same(p.account(), Some(AccountState::Ended));
     assert!(p.write(Change::Star((StarKind::Song, "sc-t1".into(), true))).is_err());
     same(p.sign_in("no session here".into()), Some(SignInResult::NoSession));
+}
+
+const CODES: &str = "https://api-reg.soundcloud.com/pairing/codes";
+
+/// A code as `start_code` makes it, waiting at `CODES/AB12`.
+fn code() -> SignInCode {
+    SignInCode { code: "AB12".into(), url: "https://secure.soundcloud.com/activate/AB12".into(), every: 3, lasts: None, state: "p/t+1".into() }
+}
+
+#[test]
+fn a_code_is_made_for_this_device() {
+    let fake = Fake::default();
+    // A client id the site no longer takes: asked again with the new one.
+    fake.set("client-id", b"stale");
+    let mut p = plugin(fake);
+    for (interval, every) in [(r#""5""#, 5), ("4", 4), (r#""soon""#, 3), ("null", 3)] {
+        p.host.answer(CODES, 201, &format!(r#"{{"code":"UJ 6","poll_token":"PT","poll_interval_seconds":{interval}}}"#));
+        let code = p.start_code().unwrap();
+        same(code, SignInCode { code: "UJ 6".into(), url: "https://secure.soundcloud.com/activate/UJ%206".into(), every, lasts: None, state: "PT".into() });
+    }
+    let posted = p.host.posted.borrow();
+    let urls: Vec<&str> = posted.iter().map(|(url, _)| url.as_str()).collect();
+    let taken = format!("{CODES}?client_id={ID}");
+    assert_eq!(urls, [format!("{CODES}?client_id=stale").as_str(), &taken, &taken, &taken, &taken]);
+    let device = &posted[0].1["device"];
+    assert_eq!((&device["type"], &device["name"]), (&"cli".into(), &"nori".into()));
+    let id = device["id"].as_str().unwrap();
+    assert_eq!(p.host.store.borrow().get("device-id").map(Vec::as_slice), Some(id.as_bytes()), "kept for every profile");
+    assert!(posted.iter().all(|(_, body)| body["device"]["id"] == id), "the same device each time");
+}
+
+#[test]
+fn a_device_id_is_a_version_4_uuid() {
+    assert_eq!(crate::api::uuid(0), "00000000-0000-4000-8000-000000000000");
+    assert_eq!(crate::api::uuid(u128::MAX), "ffffffff-ffff-4fff-bfff-ffffffffffff");
+    assert_ne!(crate::random(), crate::random());
+}
+
+#[test]
+fn a_code_waits_until_allowed_or_expired() {
+    let mut p = plugin(Fake::default());
+    let poll = format!("{CODES}/AB12?poll_token=p%2Ft%2B1");
+    for (status, body, want) in [
+        (404, "", CodeCheck::Waiting),
+        (504, "", CodeCheck::Waiting),
+        (200, r#"{"status":"created","code":"AB12"}"#, CodeCheck::Waiting),
+        (200, r#"{"status":"expired"}"#, CodeCheck::Expired),
+        (410, "", CodeCheck::Expired),
+    ] {
+        p.host.answer(&poll, status, body);
+        same(p.check_code(code()), Some(want));
+    }
+    assert!(p.host.posted.borrow().is_empty(), "no sign-in before it is allowed");
+    same(p.account(), Some(AccountState::SignedOut));
+}
+
+#[test]
+fn an_allowed_code_signs_in_as_the_cookie_does() {
+    for (status, answer, want) in [
+        (200, r#"{"session":{"access_token":"2-9-xyz"}}"#, Some(SignInResult::SignedIn("listener".into()))),
+        (200, r#"{"access_token":"2-9-xyz"}"#, Some(SignInResult::SignedIn("listener".into()))),
+        (200, r#"{"session":{}}"#, None),
+        (401, "", None),
+    ] {
+        let fake = Fake::default();
+        fake.answer(&format!("{CODES}/AB12?poll_token=p%2Ft%2B1"), 200, r#"{"status":"activated"}"#);
+        fake.answer("https://api-reg.soundcloud.com/pairing/sign-in", status, answer);
+        fake.api("/me", r#"{"id":99,"username":"listener"}"#);
+        fake.api("/users/99/track_likes?limit=200", &page(&[format!(r#"{{"track":{}}}"#, track(1, "ALLOW", &[mp3()]))]));
+        let mut p = plugin(fake);
+        let signed_in = want.is_some();
+        same(p.check_code(code()), Some(CodeCheck::Done(want.unwrap_or(SignInResult::Refused))));
+        let posted = p.host.posted.borrow().clone();
+        assert_eq!(posted, [(format!("https://api-reg.soundcloud.com/pairing/sign-in?client_id={ID}"), serde_json::json!({ "client_id": ID, "pairing_code": "AB12", "poll_token": "p/t+1", "scope": "" }))]);
+        if !signed_in {
+            same(p.account(), Some(AccountState::SignedOut));
+            continue;
+        }
+        same(p.account(), Some(AccountState::SignedIn));
+        assert!(matches!(p.read(Request::Starred), Ok(Page::Found(f)) if f.songs.len() == 1));
+        assert!(p.host.asked.borrow().iter().filter(|(_, u, _)| u.contains("api-v2")).all(|(_, _, auth)| auth.as_deref() == Some("OAuth 2-9-xyz")));
+        // Kept: the profile opened again is still signed in.
+        p.open(Profile { id: "p1".into(), name: String::new(), address: String::new(), user: String::new(), password: String::new(), api_key: String::new() });
+        same(p.account(), Some(AccountState::SignedIn));
+    }
 }
