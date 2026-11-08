@@ -335,6 +335,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "soundcore"
+version = "0.6.3"
+dependencies = [
+ "nori-plugin-sdk",
+]
+
+[[package]]
 name = "speaker"
 version = "0.4.0"
 dependencies = [
