@@ -4,6 +4,13 @@
       "id": "fm.nori.moving-covers",
       "versions": [
         {
+          "version": "0.3.0",
+          "api": 3,
+          "released": "2026-11-08",
+          "url": "https://github.com/norifm/nori-plugins/releases/download/moving-covers-0.3.0/moving-covers-0.3.0.noriplugin",
+          "sha256": "44bd1f27913631e8ac76431967cdd7e210088ba20b57b65162e2d5dff49335d6"
+        },
+        {
           "version": "0.2.0",
           "api": 2,
           "released": "2026-10-30",
@@ -27,7 +34,7 @@
       ],
       "name": "Moving covers",
       "about": "Albums that have a moving cover on Apple Music play it in the player.",
-      "source": "https://github.com/norifm/nori-plugins/tree/moving-covers-0.2.0/moving-covers",
+      "source": "https://github.com/norifm/nori-plugins/tree/moving-covers-0.3.0/moving-covers",
       "readme": "https://raw.githubusercontent.com/norifm/nori-plugins/main/moving-covers/README.md",
       "icon": "https://raw.githubusercontent.com/norifm/nori-plugins/main/moving-covers/icon.png",
       "points": [
