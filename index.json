@@ -196,6 +196,13 @@
       "id": "fm.nori.soundcloud",
       "versions": [
         {
+          "version": "0.2.0",
+          "api": 3,
+          "released": "2026-11-08",
+          "url": "https://github.com/norifm/nori-plugins/releases/download/soundcloud-0.2.0/soundcloud-0.2.0.noriplugin",
+          "sha256": "02104886c1646a6356644083737dea16d7ae0ca677a608af1ee78890622b9532"
+        },
+        {
           "version": "0.1.1",
           "api": 2,
           "released": "2026-11-08",
@@ -212,7 +219,7 @@
       ],
       "name": "SoundCloud",
       "about": "Search and play SoundCloud. Best effort: SoundCloud can stop it working at any time. Sign in to see your likes, your playlists and your stream.",
-      "source": "https://github.com/norifm/nori-plugins/tree/soundcloud-0.1.1/soundcloud",
+      "source": "https://github.com/norifm/nori-plugins/tree/soundcloud-0.2.0/soundcloud",
       "points": [
         "provider"
       ],
@@ -227,6 +234,7 @@
       "net": [
         "soundcloud.com",
         "api-v2.soundcloud.com",
+        "api-reg.soundcloud.com",
         "*.sndcdn.com",
         "*.soundcloud.cloud"
       ]
