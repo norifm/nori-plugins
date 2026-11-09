@@ -241,7 +241,7 @@ pub fn request_tries(link: &mut impl Link, buffer: &mut Vec<u8>, status: &mut St
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::collections::VecDeque;
 
@@ -255,7 +255,7 @@ mod tests {
         body
     }
 
-    fn inbound(command: [u8; 2], body: &[u8]) -> Vec<u8> {
+    pub(crate) fn inbound(command: [u8; 2], body: &[u8]) -> Vec<u8> {
         let mut bytes = outbound(command, body);
         bytes[..5].copy_from_slice(&INBOUND);
         *bytes.last_mut().unwrap() = sum(&bytes[..bytes.len() - 1]);

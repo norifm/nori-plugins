@@ -2,7 +2,9 @@
 //! Ported from OpenSCQ30 by Kyle Scheuing (GPL-3.0-or-later, https://github.com/Oppzippy/OpenSCQ30).
 
 use crate::models::{Eq, Fine, Gap, Genre, Hear, Ldac, Model, Profile, Special, Tail, ACTION_IDS};
-use crate::protocol::{Ambient, Status, SET_SOUND_MODES};
+use std::time::{Duration, Instant};
+
+use crate::protocol::{request, request_tries, Ambient, Link, Status, REQUEST_STATE, SET_SOUND_MODES};
 
 /// A row's value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,8 +19,6 @@ pub enum V {
 pub struct Plan {
     pub requests: Vec<([u8; 2], Vec<u8>)>,
     pub next: Status,
-    /// Sent once, never again if it goes unanswered.
-    pub once: bool,
 }
 
 /// Switches: their row, where the state packet has them, and the command that sets them.
@@ -231,7 +231,41 @@ fn limit_plan(s: &Status, mut next: Status, on: u8, db: u8) -> Option<Plan> {
     let at = limit_at(s)?;
     next.state[at] = on;
     next.state[at + 1] = db;
-    Some(Plan { requests: vec![([0x20, 0x82], vec![on, db])], next, once: true })
+    Some(Plan { requests: vec![([0x20, 0x82], vec![on, db])], next })
+}
+
+/// The least time between two writes of the volume limit. A held key steps a choice row many times a
+/// second, and a stream of these writes has left headphones stuck dangerously loud.
+const LIMIT_GAP: Duration = Duration::from_secs(1);
+
+/// How a change of the volume limit went.
+#[derive(Debug, PartialEq)]
+pub enum LimitChange {
+    /// Too soon after the last write, or they already hold it: nothing was written.
+    Skipped,
+    /// They didn't answer, so nothing was written.
+    Unanswered,
+    Taken,
+    NotTaken,
+}
+
+/// Writes the volume limit once, to headphones that have just said what they hold and from that answer,
+/// then reads back what they hold, which is what the rows show.
+pub fn change_limit(link: &mut impl Link, buffer: &mut Vec<u8>, status: &mut Status, last_write: &mut Option<Instant>, now: Instant, row: &str, v: V) -> LimitChange {
+    if last_write.is_some_and(|at| now.duration_since(at) < LIMIT_GAP) {
+        return LimitChange::Skipped;
+    }
+    if !request(link, buffer, status, REQUEST_STATE, &[]) {
+        return LimitChange::Unanswered;
+    }
+    let Some(plan) = plan(status, row, v) else { return LimitChange::Skipped };
+    let wanted = limit_of(&plan.next);
+    *last_write = Some(now);
+    if plan.requests.iter().all(|(command, body)| request_tries(link, buffer, status, *command, body, 1)) {
+        status.state = plan.next.state;
+    }
+    request(link, buffer, status, REQUEST_STATE, &[]);
+    if limit_of(status) == wanted { LimitChange::Taken } else { LimitChange::NotTaken }
 }
 
 /// The firmware of each part that has its own, and the serial number.
@@ -348,7 +382,7 @@ fn equalizer_plan(mut next: Status, preset: u16, change: impl Fn(&mut [u8])) -> 
     next.state[HEAR_ON_AT] = 0;
     for_channels(&mut next.state, change);
     let body = equalizer_body(&next.state)?;
-    Some(Plan { requests: vec![([0x03, 0x87], body)], next, once: false })
+    Some(Plan { requests: vec![([0x03, 0x87], body)], next })
 }
 
 /// How to bring the equalizer to 0 dB on every band, since nori has its own; None when it already is.
@@ -368,7 +402,7 @@ pub fn flat_plan(s: &Status) -> Option<Plan> {
 }
 
 fn one(command: [u8; 2], body: Vec<u8>, next: Status) -> Option<Plan> {
-    Some(Plan { requests: vec![(command, body)], next, once: false })
+    Some(Plan { requests: vec![(command, body)], next })
 }
 
 fn modes_plan(mut next: Status, field: usize, value: u8) -> Option<Plan> {
@@ -380,7 +414,7 @@ fn modes_plan(mut next: Status, field: usize, value: u8) -> Option<Plan> {
     }
     let requests = mode_steps(from, to, field).into_iter().map(|m| (SET_SOUND_MODES, m.to_vec())).collect();
     next.modes = Some(to.to_vec());
-    Some(Plan { requests, next, once: false })
+    Some(Plan { requests, next })
 }
 
 /// The rows `model` has, beside its firmware and serial number.
@@ -512,7 +546,7 @@ fn special_flat_plan(s: &Status, eq: Eq, special: Special) -> Option<Plan> {
             bytes[0] = custom;
             bytes[1..].fill(zero);
             let requests = vec![([0x02, 0x81], vec![custom]), ([0x02, 0x83], vec![zero; eq.bands])];
-            Some(Plan { requests, next, once: false })
+            Some(Plan { requests, next })
         }
         Special::PresetOnly { zero } => {
             // The headphones don't say their bands, so every connection writes them.
@@ -767,7 +801,7 @@ fn fine_plan(s: &Status, model: &Model, row: &str, v: V) -> Option<Plan> {
     let mut to = from.clone();
     to[field] = value;
     next.modes = Some(to);
-    Some(Plan { requests: steps.into_iter().map(|m| (SET_SOUND_MODES, m)).collect(), next, once: false })
+    Some(Plan { requests: steps.into_iter().map(|m| (SET_SOUND_MODES, m)).collect(), next })
 }
 
 /// How to set `row` of a model whose state is read through its table. Each write checks the byte it
@@ -928,7 +962,10 @@ pub fn plan(s: &Status, row: &str, v: V) -> Option<Plan> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
+
     use super::*;
+    use crate::protocol::tests::inbound;
     use crate::protocol::{outbound, Ambient};
 
     fn status() -> Status {
@@ -1066,9 +1103,96 @@ mod tests {
         for (row, v, body) in [("volume_limit_db", V::Choice(3), vec![1, 90]), ("volume_limit", V::Switch(false), vec![0, 80])] {
             let p = plan(&s, row, v).unwrap();
             assert_eq!(p.requests, [([0x20, 0x82], body)], "{row}");
-            assert!(p.once, "{row}");
             assert_eq!(value(&p.next, row), Some(v), "{row}");
         }
+    }
+
+    /// Headphones holding `state`: they answer a request for it, and take a limit write if `takes`.
+    struct Headset {
+        state: Vec<u8>,
+        takes: bool,
+        answers: bool,
+        limit_writes: Vec<Vec<u8>>,
+        waiting: VecDeque<Vec<u8>>,
+    }
+
+    impl Headset {
+        fn holding(on: u8, db: u8) -> Headset {
+            let mut state = status().state;
+            state[LIMIT_AT] = on;
+            state[LIMIT_AT + 1] = db;
+            Headset { state, takes: true, answers: true, limit_writes: Vec::new(), waiting: VecDeque::new() }
+        }
+    }
+
+    impl Link for Headset {
+        fn write(&mut self, bytes: &[u8]) -> bool {
+            if !self.answers {
+                return true;
+            }
+            if bytes == outbound(REQUEST_STATE, &[]) {
+                self.waiting.push_back(inbound(REQUEST_STATE, &self.state));
+            } else {
+                let body = bytes[bytes.len() - 3..bytes.len() - 1].to_vec();
+                if self.takes {
+                    self.state[LIMIT_AT..LIMIT_AT + 2].copy_from_slice(&body);
+                }
+                self.limit_writes.push(body);
+                self.waiting.push_back(inbound([0x20, 0x82], &[]));
+            }
+            true
+        }
+
+        fn read(&mut self, _: u32) -> Option<Vec<u8>> {
+            self.waiting.pop_front()
+        }
+    }
+
+    fn tap(headset: &mut Headset, s: &mut Status, last: &mut Option<Instant>, now: Instant, row: &str, v: V) -> LimitChange {
+        change_limit(headset, &mut Vec::new(), s, last, now, row, v)
+    }
+
+    #[test]
+    fn a_limit_the_headphones_refused_can_be_tried_again() {
+        let (mut h, mut s, mut last, t) = (Headset::holding(1, 80), status(), None, Instant::now());
+        h.takes = false;
+        assert_eq!(tap(&mut h, &mut s, &mut last, t, "volume_limit", V::Switch(false)), LimitChange::NotTaken);
+        assert_eq!(limit_of(&s), Some((1, 80)), "the row shows what they hold");
+        h.takes = true;
+        assert_eq!(tap(&mut h, &mut s, &mut last, t + LIMIT_GAP, "volume_limit", V::Switch(false)), LimitChange::Taken);
+        assert_eq!(h.limit_writes, [vec![0, 80], vec![0, 80]]);
+        assert_eq!(limit_of(&s), Some((0, 80)));
+    }
+
+    #[test]
+    fn a_limit_write_starts_from_what_the_headphones_say_now() {
+        let (mut h, mut s, mut last, t) = (Headset::holding(0, 80), status(), None, Instant::now());
+        assert_eq!(limit_of(&s), Some((1, 80)), "the last answer is out of date");
+        assert_eq!(tap(&mut h, &mut s, &mut last, t, "volume_limit", V::Switch(false)), LimitChange::Skipped, "already off");
+        assert_eq!((h.limit_writes.len(), limit_of(&s)), (0, Some((0, 80))));
+
+        let (mut h, mut s, mut last) = (Headset::holding(1, 90), status(), None);
+        assert_eq!(tap(&mut h, &mut s, &mut last, t, "volume_limit", V::Switch(false)), LimitChange::Taken);
+        assert_eq!(h.limit_writes, [vec![0, 90]], "keeps the level they hold");
+    }
+
+    #[test]
+    fn headphones_that_dont_answer_get_no_limit_write() {
+        let (mut h, mut s, mut last, t) = (Headset::holding(1, 80), status(), None, Instant::now());
+        h.answers = false;
+        assert_eq!(tap(&mut h, &mut s, &mut last, t, "volume_limit", V::Switch(false)), LimitChange::Unanswered);
+        assert!(h.limit_writes.is_empty());
+        assert_eq!(last, None, "the next tap isn't held back");
+    }
+
+    #[test]
+    fn limit_writes_stay_a_second_apart_however_fast_rows_change() {
+        let (mut h, mut s, mut last, t) = (Headset::holding(1, 75), status(), None, Instant::now());
+        for tenth in 0..=20u32 {
+            let choice = V::Choice(1 + tenth % 4);
+            tap(&mut h, &mut s, &mut last, t + LIMIT_GAP * tenth / 10, "volume_limit_db", choice);
+        }
+        assert_eq!(h.limit_writes, [vec![1, 80], vec![1, 90], vec![1, 80]], "at 0, 1 and 2 seconds");
     }
 
     #[test]

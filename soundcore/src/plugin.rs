@@ -1,5 +1,7 @@
 //! The headphones in nori: one RFCOMM channel each, kept open while they're connected.
 
+use std::time::Instant;
+
 use nori_plugin_sdk::bluetooth::{connected, Rfcomm};
 use nori_plugin_sdk::device_control::{Battery, DeviceState, Noise};
 use nori_plugin_sdk::hooks::Event;
@@ -7,9 +9,9 @@ use nori_plugin_sdk::{log, rows};
 use nori_plugin_sdk::types::Value;
 use nori_plugin_sdk::{DeviceControl, DeviceFilter, Hooks, Lifecycle, Manifest, Row, RowKind};
 
-use crate::protocol::{request, request_tries, take_packets, Ambient, Link, Status, LDAC, REQUEST_STATE, SET_SOUND_MODES};
+use crate::protocol::{request, take_packets, Ambient, Link, Status, LDAC, REQUEST_STATE, SET_SOUND_MODES};
 use crate::models::{self, Model};
-use crate::settings::{self, Plan, V};
+use crate::settings::{self, LimitChange, Plan, V};
 
 /// The serial port service, for headphones that don't list Soundcore's own.
 const SPP: &str = "00001101-0000-1000-8000-00805f9b34fb";
@@ -49,8 +51,8 @@ struct Buds {
     shown: Vec<(&'static str, bool)>,
     told_info: bool,
     told_rows: bool,
-    /// The headphones didn't end up with the volume limit asked for: it isn't written again this connection.
-    limit_stopped: bool,
+    /// When the volume limit was last written.
+    limit_written: Option<Instant>,
 }
 
 impl Buds {
@@ -76,31 +78,27 @@ impl Buds {
     }
 
     fn sends(&mut self, plan: &Plan) -> bool {
-        let tries = if plan.once { 1 } else { 3 };
         plan.requests.iter().all(|(command, body)| {
             log::write(log::Level::Info, &format!("sending {command:02x?} {body:02x?}"));
-            request_tries(&mut Channel(self.channel.as_ref()), &mut self.buffer, &mut self.status, *command, body, tries)
+            request(&mut Channel(self.channel.as_ref()), &mut self.buffer, &mut self.status, *command, body)
         })
     }
 
-    /// Carries `plan` out; if the headphones stop answering, on a new channel unless it may be sent only
-    /// once, and what they say they are stands.
+    /// Carries `plan` out; if the headphones stop answering, on a new channel, and what they say they are stands.
     fn carry_out(&mut self, plan: Plan) {
-        if self.sends(&plan) || (self.reopen() && !plan.once && self.sends(&plan)) {
+        if self.sends(&plan) || (self.reopen() && self.sends(&plan)) {
             self.status.state = plan.next.state;
             self.status.modes = plan.next.modes;
             self.status.ldac = plan.next.ldac;
         }
     }
 
-    /// Sets the volume limit, then reads back that the headphones hold what was asked.
-    fn set_limit(&mut self, plan: Plan) {
-        let wanted = settings::limit_of(&plan.next);
-        self.carry_out(plan);
-        self.ask(REQUEST_STATE, &[]);
-        if settings::limit_of(&self.status) != wanted {
-            log::write(log::Level::Warn, "the headphones did not take the volume limit: not writing it again");
-            self.limit_stopped = true;
+    /// Changes the volume limit. If they don't answer, a new channel, for the next change to use.
+    fn set_limit(&mut self, row: &str, v: V) {
+        let change = settings::change_limit(&mut Channel(self.channel.as_ref()), &mut self.buffer, &mut self.status, &mut self.limit_written, Instant::now(), row, v);
+        log::write(log::Level::Info, &format!("volume limit {row} {v:?}: {change:?}"));
+        if change == LimitChange::Unanswered {
+            self.reopen();
         }
     }
 
@@ -199,7 +197,7 @@ impl DeviceControl for Soundcore {
             log::write(log::Level::Warn, "the headphones did not say their state");
             return false;
         }
-        let mut buds = Buds { id: device, channel: Some(channel), service, silent: false, buffer, status, published: Vec::new(), shown: Vec::new(), told_info: false, told_rows: false, limit_stopped: false };
+        let mut buds = Buds { id: device, channel: Some(channel), service, silent: false, buffer, status, published: Vec::new(), shown: Vec::new(), told_info: false, told_rows: false, limit_written: None };
         if model.full || model.ldac == Some(models::Ldac::Asked) {
             buds.ask(LDAC, &[]);
         }
@@ -284,15 +282,10 @@ impl Lifecycle for Soundcore {
             Value::Flags(x) => V::Flags(x),
             _ => return,
         };
-        let limit = settings::is_volume_limit(&row);
-        if !(limit && b.limit_stopped) {
-            if let Some(plan) = settings::plan(&b.status, &row, v) {
-                if limit {
-                    b.set_limit(plan);
-                } else {
-                    b.carry_out(plan);
-                }
-            }
+        if settings::is_volume_limit(&row) {
+            b.set_limit(&row, v);
+        } else if let Some(plan) = settings::plan(&b.status, &row, v) {
+            b.carry_out(plan);
         }
         // Everything again: the row shows what the user chose until the headphones' answer replaces it.
         b.published.clear();
