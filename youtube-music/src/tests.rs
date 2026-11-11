@@ -223,7 +223,7 @@ fn an_artists_about_comes_from_its_page() {
 #[test]
 fn signed_out_the_account_has_nothing() {
     let mut yt = youtube(vec![]);
-    for r in [Request::Playlists, Request::Albums((AlbumSort::Newest, 60, 0)), Request::Starred] {
+    for r in [Request::Playlists, Request::Albums((AlbumSort::Newest, 60, 0)), Request::Artists, Request::Songs((50, 0)), Request::Starred] {
         assert!(matches!(yt.read(r), Ok(Page::None)));
     }
     assert!(matches!(yt.write(Change::Star((StarKind::Song, "yt-x".into(), true))), Err(Error { kind: ErrorKind::Unsupported, .. })));
@@ -472,6 +472,19 @@ fn liked_songs_are_the_favorites_and_the_feed_its_shelves() {
     assert!(yt.host.asked.lock().unwrap().iter().all(|r| r.header("Cookie").is_none()), "signed out, a visitor's feed");
 }
 
+/// Signed in, Library's artists are those the account subscribes to and its songs those in its library,
+/// one page of them.
+#[test]
+fn the_library_lists_its_artists_and_songs() {
+    let mut yt = signed_in(30, vec![answer(200, "library_artists", &[]), answer(200, "library_songs", &[])]);
+    let Page::Artists(a) = yt.read(Request::Artists).unwrap() else { panic!("artists") };
+    assert_eq!(a.iter().map(|a| (a.id.as_str(), a.name.as_str())).collect::<Vec<_>>(), [("yt-UCRr1xG_2WIDs18a6cIiCxeA", "Daft Punk"), ("yt-UClYV6hHlupm_S_ObS1W-DYw", "The Weeknd")]);
+    let Page::Songs(s) = yt.read(Request::Songs((2, 0))).unwrap() else { panic!("songs") };
+    assert_eq!(s.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), ["yt-khnokW3Mw24", "yt-Rgrt_8mXrK8"], "as many as asked");
+    assert!(matches!(yt.read(Request::Songs((2, 2))), Ok(Page::None)), "one page: none past it");
+    assert_eq!(asked(&yt), 2);
+}
+
 /// Signed in, the account's library, likes and history join; a jam guest only plays.
 #[test]
 fn its_rules_follow_the_account() {
@@ -479,7 +492,7 @@ fn its_rules_follow_the_account() {
     assert!(out.feed && out.measures && out.downloads && out.radio && !out.account && !out.stars && !out.scrobbles);
     assert_eq!(out.sections, [LibrarySection::Downloads, LibrarySection::History]);
     assert!(signed.account && signed.stars && signed.scrobbles);
-    assert_eq!(signed.sections, [LibrarySection::Albums, LibrarySection::Favorites, LibrarySection::Playlists, LibrarySection::Downloads, LibrarySection::History]);
+    assert_eq!(signed.sections, [LibrarySection::Albums, LibrarySection::Favorites, LibrarySection::Artists, LibrarySection::Songs, LibrarySection::Playlists, LibrarySection::Downloads, LibrarySection::History]);
     let mut yt = signed_in(30, vec![]);
     same(yt.rules(profile("yt"), false), Some(signed));
     let guest = yt.rules(profile("yt"), true).unwrap();

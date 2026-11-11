@@ -156,7 +156,7 @@ dependencies = [
 [[package]]
 name = "innertube-music"
 version = "0.1.0"
-source = "git+https://github.com/filipton/innertube-music#e9589c18daf555e10cf17d94163e204c67434620"
+source = "git+https://github.com/filipton/innertube-music#f6beb3ca32f85a5d4076d5ff6cf8f718c4978601"
 dependencies = [
  "serde_json",
  "sha1_smol",

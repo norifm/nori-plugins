@@ -63,9 +63,13 @@ fn error(e: yt::Error<Error>) -> Error {
 }
 
 /// Local playback, downloads, radio and history are there signed out; signing in adds the account's
-/// library and likes, and plays go into its history.
+/// library (its albums, artists, songs and playlists) and likes, and plays go into its history.
 fn rules(signed_in: bool) -> ProfileRules {
-    let mut sections = if signed_in { vec![LibrarySection::Albums, LibrarySection::Favorites, LibrarySection::Playlists] } else { Vec::new() };
+    let mut sections = if signed_in {
+        vec![LibrarySection::Albums, LibrarySection::Favorites, LibrarySection::Artists, LibrarySection::Songs, LibrarySection::Playlists]
+    } else {
+        Vec::new()
+    };
     sections.extend([LibrarySection::Downloads, LibrarySection::History]);
     ProfileRules { account: signed_in, downloads: true, radio: true, feed: true, stars: signed_in, scrobbles: signed_in, sections, measures: true, ahead: Some(AHEAD) }
 }
@@ -285,8 +289,9 @@ impl<H: Host + Sync> Provider for YouTube<H> {
         self.load(profile.id)
     }
 
-    /// Signed in, the library's reads are the account's: its saved albums (one page), its playlists and
-    /// its liked songs as the favorites. Reads it has nothing for are the empty page.
+    /// Signed in, the library's reads are the account's: its saved albums, the artists it subscribes to
+    /// and the songs in its library (one page each), its playlists and its liked songs as the favorites.
+    /// Reads it has nothing for are the empty page.
     fn read(&mut self, request: Request) -> Result<Page, Error> {
         self.fresh()?;
         let signed_in = self.signed_in();
@@ -306,6 +311,8 @@ impl<H: Host + Sync> Provider for YouTube<H> {
             Request::HomeFeed => Page::Feed(self.after(block(api.home(t)))?.into_iter().filter_map(shelf).collect()),
             Request::Playlists if signed_in => Page::Playlists(self.after(block(api.library_playlists(t)))?.into_iter().map(|p| playlist(p, &[])).collect()),
             Request::Albums((_, _, 0)) if signed_in => Page::Albums(self.after(block(api.library_albums(t)))?.into_iter().map(album).collect()),
+            Request::Artists if signed_in => Page::Artists(self.after(block(api.library_artists(t)))?.into_iter().map(artist).collect()),
+            Request::Songs((count, 0)) if signed_in => Page::Songs(songs(self.after(block(api.library_songs(t)))?).into_iter().take(count as usize).collect()),
             Request::Starred if signed_in => {
                 let liked = songs(self.after(block(api.liked_songs(t)))?).into_iter().map(|s| Song { starred: true, ..s }).collect();
                 Page::Found(Found { songs: liked, albums: Vec::new(), artists: Vec::new(), playlists: Vec::new() })
