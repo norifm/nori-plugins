@@ -204,19 +204,16 @@ fn an_album_counts_and_lists_only_what_plays_whole() {
 }
 
 #[test]
-fn signed_in_the_account_has_its_likes_and_its_stream() {
+fn signed_in_the_account_has_its_likes() {
     let fake = Fake::default();
     fake.api("/me", r#"{"id":99,"username":"listener"}"#);
     fake.api("/users/99/track_likes?limit=200", &page(&[format!(r#"{{"track":{}}}"#, track(1, "ALLOW", &[mp3()]))]));
-    fake.api("/stream?limit=50", &page(&[format!(r#"{{"type":"track-repost","track":{}}}"#, track(2, "ALLOW", &[mp3()])), r#"{"type":"playlist","playlist":{"id":5}}"#.into()]));
     let mut p = plugin(fake);
     assert!(p.sign_in_done("https://soundcloud.com/discover".into(), "sc_anonymous_id=1; oauth_token=2-123-abc; other=x".into()));
     assert!(!p.sign_in_done("https://soundcloud.com/signin".into(), "sc_anonymous_id=1".into()));
     same(p.sign_in("sc_anonymous_id=1; oauth_token=2-123-abc".into()), Some(SignInResult::SignedIn("listener".into())));
     let Ok(Page::Found(likes)) = p.read(Request::Starred) else { panic!("likes") };
     assert_eq!(likes.songs.iter().map(|s| (s.id.as_str(), s.starred)).collect::<Vec<_>>(), [("sc-t1", true)]);
-    let Ok(Page::Feed(home)) = p.read(Request::HomeFeed) else { panic!("a feed") };
-    assert_eq!(home[0].songs.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), ["sc-t2"]);
     assert!(p.host.asked.borrow().iter().filter(|(_, u, _)| u.contains("api-v2")).all(|(_, _, auth)| auth.as_deref() == Some("OAuth 2-123-abc")));
     p.host.answer("https://api-v2.soundcloud.com/users/99/track_likes/1", 200, "");
     p.write(Change::Star((StarKind::Song, "sc-t1".into(), false))).unwrap();
@@ -320,4 +317,80 @@ fn an_allowed_code_signs_in_as_the_cookie_does() {
         p.open(Profile { id: "p1".into(), name: String::new(), address: String::new(), user: String::new(), password: String::new(), api_key: String::new() });
         same(p.account(), Some(AccountState::SignedIn));
     }
+}
+
+/// SoundCloud's answers as recorded, trimmed.
+const TRENDING: &str = include_str!("recorded/charts-trending.json");
+const SELECTIONS: &str = include_str!("recorded/mixed-selections.json");
+
+#[test]
+fn signed_out_home_is_soundclouds_discovery() {
+    let fake = Fake::default();
+    fake.api("/charts?kind=trending&genre=soundcloud:genres:all-music&limit=50", TRENDING);
+    fake.api("/mixed-selections?limit=20", SELECTIONS);
+    let mut p = plugin(fake);
+    let rules = p.rules(Profile { id: "p1".into(), name: String::new(), address: String::new(), user: String::new(), password: String::new(), api_key: String::new() }, false).unwrap();
+    assert!(rules.feed, "Home is SoundCloud's own, signed in or not");
+    let Ok(Page::Feed(home)) = p.read(Request::HomeFeed) else { panic!("a feed") };
+    let shelves: Vec<(&str, usize, usize)> = home.iter().map(|s| (s.title.as_str(), s.songs.len(), s.playlists.len())).collect();
+    assert_eq!(shelves, [("Trending", 4, 0), ("Artists to watch out for", 0, 3), ("Curated by SoundCloud", 0, 3), ("Trending by genre", 0, 3)], "a preview is left out of the chart");
+}
+
+const LIKES: &str = include_str!("recorded/likes.json");
+const STREAM: &str = include_str!("recorded/stream.json");
+const MADE: &str = include_str!("recorded/system-playlist.json");
+
+#[test]
+fn signed_in_home_has_the_accounts_own_before_discovery() {
+    let fake = Fake::default();
+    fake.api("/me", r#"{"id":99,"username":"listener"}"#);
+    fake.api("/me/play-history/tracks?limit=50", &page(&[format!(r#"{{"played_at":1,"track":{}}}"#, track(1, "ALLOW", &[mp3()])), format!(r#"{{"played_at":2,"track":{}}}"#, track(2, "SNIP", &[mp3()]))]));
+    fake.api("/mixed-selections?limit=20", SELECTIONS);
+    // A playlist reposted, and a track reposted twice.
+    let reposted = format!(r#"[{{"type":"playlist-repost","playlist":{{"id":5,"title":"Reposted"}}}},{{"type":"track-repost","track":{}}},"#, track(2156538192, "ALLOW", &[mp3()]));
+    fake.api("/stream?limit=50", &STREAM.replacen('[', &reposted, 1));
+    fake.api("/users/99/playlists_without_albums?limit=50", &page(&[r#"{"id":6,"title":"Mine"}"#.into()]));
+    fake.api("/users/99/likes?limit=50", LIKES);
+    fake.answer("https://api-v2.soundcloud.com/charts?kind=trending&genre=soundcloud:genres:all-music&limit=50", 403, "");
+    let mut p = plugin(fake);
+    p.sign_in("2-123-abc".into());
+    let Ok(Page::Feed(home)) = p.read(Request::HomeFeed) else { panic!("a feed") };
+    let ids = |ids: Vec<&str>| ids.join(" ");
+    let shelves: Vec<(&str, String, String)> = home.iter().map(|s| (s.title.as_str(), ids(s.songs.iter().map(|s| s.id.as_str()).collect()), ids(s.playlists.iter().map(|p| p.id.as_str()).collect()))).collect();
+    let made = "sc-ysoundcloud:system-playlists:trending-by-genre";
+    let want = [
+        ("Recently played", "sc-t1".to_string(), String::new()),
+        ("Artists to watch out for", String::new(), "sc-s1988906940 sc-s1780168491 sc-s1780168467".into()),
+        ("Curated by SoundCloud", String::new(), "sc-s734469195 sc-s801471273 sc-s1690636509".into()),
+        ("Trending by genre", String::new(), format!("{made}:trap {made}:all-genres {made}:hip-hop")),
+        ("Stream", "sc-t2156538192 sc-t2156536380".into(), "sc-s5".into()),
+        ("Your playlists", String::new(), "sc-s6 sc-s2027802282".into()),
+        ("Your likes", "sc-t2156536380 sc-t2156538192".into(), String::new()),
+    ];
+    assert_eq!(shelves, want, "each item once; previews left out; the chart refused is left out");
+    same(p.account(), Some(AccountState::SignedIn));
+    let asked = p.host.asked.borrow();
+    assert!(asked.iter().filter(|(_, u, _)| u.contains("api-v2")).all(|(_, _, auth)| auth.as_deref() == Some("OAuth 2-123-abc")));
+    assert!(!asked.iter().any(|(_, u, _)| u.contains("/media/") || u.contains("/tracks?ids=")), "no song is asked to play, no playlist opened");
+}
+
+#[test]
+fn home_fails_only_when_soundcloud_answers_none_of_it() {
+    let mut p = plugin(Fake::default());
+    assert!(p.read(Request::HomeFeed).is_err(), "nothing answered");
+    p.host.api("/charts?kind=trending&genre=soundcloud:genres:all-music&limit=50", TRENDING);
+    let Ok(Page::Feed(home)) = p.read(Request::HomeFeed) else { panic!("a feed") };
+    assert_eq!(home.iter().map(|s| s.title.as_str()).collect::<Vec<_>>(), ["Trending"]);
+}
+
+#[test]
+fn a_playlist_soundcloud_makes_opens_with_what_plays() {
+    let fake = Fake::default();
+    fake.api("/system-playlists/soundcloud%3Asystem-playlists%3Atrending-by-genre%3Atrap", MADE);
+    fake.api("/tracks?ids=2432220894,2431145643", &format!("[{},{}]", track(2431145643, "ALLOW", &[mp3()]), track(2432220894, "ALLOW", &[encrypted()])));
+    let mut p = plugin(fake);
+    let Ok(Page::Playlist(l)) = p.read(Request::Playlist("sc-ysoundcloud:system-playlists:trending-by-genre:trap".into())) else { panic!("a playlist") };
+    assert_eq!(l.songs.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), ["sc-t2431145643"], "previews by policy, encrypted ones once filled in, left out");
+    assert_eq!((l.playlist.name.as_str(), l.playlist.owner.as_deref(), l.playlist.comment.as_deref()), ("Trap", Some("SoundCloud"), Some("Trending tracks in Trap")));
+    assert_eq!(l.playlist.cover.as_deref(), Some("https://i1.sndcdn.com/artworks-jrvIRzVaug2O-0-t500x500.jpg"), "its artwork made from its tracks'");
 }

@@ -69,14 +69,17 @@ pub(crate) struct User {
     pub description: Option<String>,
 }
 
-/// A playlist or an album. Long ones list only the first tracks whole, the rest by id and policy alone
-/// (no media).
+/// A playlist or an album, or a playlist SoundCloud makes (trending, mixes, stations). Long ones list
+/// only the first tracks whole, the rest by id and policy alone (no media); one SoundCloud makes lists
+/// all by id.
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct Set {
-    pub id: u64,
+    pub id: SetId,
     #[serde(default)]
     pub title: String,
     pub artwork_url: Option<String>,
+    /// A made playlist's artwork, from its tracks'.
+    pub calculated_artwork_url: Option<String>,
     pub user: Option<User>,
     pub description: Option<String>,
     /// Milliseconds.
@@ -88,22 +91,43 @@ pub(crate) struct Set {
     pub display_date: Option<String>,
 }
 
+/// A set's id: a number, or the URN of a playlist SoundCloud makes
+/// (`soundcloud:system-playlists:trending-by-genre:pop`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum SetId {
+    Number(u64),
+    Made(String),
+}
+
 #[derive(Debug, Deserialize)]
 pub(crate) struct Collection<T> {
     #[serde(default = "Vec::new")]
     pub collection: Vec<T>,
 }
 
-/// A like of the account's.
+/// An item that holds a track or a set: a like, a chart's place, a play, a post or repost in the
+/// stream.
 #[derive(Debug, Deserialize)]
-pub(crate) struct Like {
+pub(crate) struct Entry {
     pub track: Option<Track>,
+    pub playlist: Option<Set>,
 }
 
-/// An item of the account's stream: a track or a set, posted or reposted by someone followed.
+/// A shelf of Discover (`/mixed-selections`), as SoundCloud titles it.
 #[derive(Debug, Deserialize)]
-pub(crate) struct Posted {
-    pub track: Option<Track>,
+pub(crate) struct Selection {
+    #[serde(default)]
+    pub title: String,
+    pub items: Collection<serde_json::Value>,
+}
+
+impl Selection {
+    /// Its playlists, those SoundCloud makes among them; anything else it holds is left out.
+    pub fn playlists(&self) -> Vec<Playlist> {
+        let sets = self.items.collection.iter().filter(|i| matches!(i["kind"].as_str(), Some("playlist" | "system-playlist")));
+        sets.filter_map(|i| Set::deserialize(i).ok()).map(|s| s.playlist()).collect()
+    }
 }
 
 pub(crate) const ID_PREFIX: &str = "sc-";
@@ -117,8 +141,20 @@ pub(crate) fn user_id(n: u64) -> String {
     format!("{ID_PREFIX}u{n}")
 }
 
-pub(crate) fn set_id(n: u64) -> String {
-    format!("{ID_PREFIX}s{n}")
+/// `sc-s<n>` a set, `sc-y<urn>` a playlist SoundCloud makes.
+pub(crate) fn set_id(id: &SetId) -> String {
+    match id {
+        SetId::Number(n) => format!("{ID_PREFIX}s{n}"),
+        SetId::Made(urn) => format!("{ID_PREFIX}y{urn}"),
+    }
+}
+
+/// Where the API answers a set of nori id `id`.
+pub(crate) fn set_path(id: &str) -> Option<String> {
+    if let Some(urn) = id.strip_prefix(ID_PREFIX)?.strip_prefix('y') {
+        return Some(format!("/system-playlists/{}", escape(urn)));
+    }
+    number(id, 's').map(|n| format!("/playlists/{n}"))
 }
 
 /// The number of a nori id of `kind` (`t`, `u` or `s`).
@@ -241,11 +277,11 @@ impl Set {
 
     pub fn album(&self) -> Album {
         Album {
-            id: set_id(self.id),
+            id: set_id(&self.id),
             name: self.title.clone(),
             artist: self.user.as_ref().map(|u| u.username.clone()).unwrap_or_default(),
             artist_id: self.user.as_ref().map(|u| user_id(u.id)),
-            cover: self.artwork_url.as_deref().map(cover),
+            cover: self.cover(),
             song_count: self.playable(),
             duration: (self.duration / 1000) as u32,
             year: year(self.release_date.as_deref().or(self.display_date.as_deref())),
@@ -257,14 +293,18 @@ impl Set {
 
     pub fn playlist(&self) -> Playlist {
         Playlist {
-            id: set_id(self.id),
+            id: set_id(&self.id),
             name: self.title.clone(),
             comment: self.description.clone().filter(|d| !d.is_empty()),
             owner: self.user.as_ref().map(|u| u.username.clone()),
             song_count: self.playable(),
             duration: (self.duration / 1000) as u32,
-            cover: self.artwork_url.as_deref().map(cover),
+            cover: self.cover(),
         }
+    }
+
+    fn cover(&self) -> Option<String> {
+        self.artwork_url.as_deref().or(self.calculated_artwork_url.as_deref()).map(cover)
     }
 
     /// The set's songs, in its order: those it lists whole, and of the rest those in `filled`.

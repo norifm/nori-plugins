@@ -1,8 +1,10 @@
 //! SoundCloud as a nori provider, over the API its own site speaks: search, artists, albums and
 //! playlists, and played as HLS of MP3 segments, which nori reads as one stream. Signed in (a code allowed
 //! in any browser, or the site's own sign-in page and its `oauth_token` cookie) it adds the account's
-//! likes as favorites, its playlists and its stream as Home. Best effort: the site's client id is taken
-//! from its scripts, as the site does, and asked for again when SoundCloud stops taking it.
+//! likes as favorites and its playlists. Home is SoundCloud's own: what is trending and its Discover
+//! shelves, and signed in the account's plays, stream, likes and playlists before them. Best effort: the
+//! site's client id is taken from its scripts, as the site does, and asked for again when SoundCloud
+//! stops taking it.
 //!
 //! Tracks only subscribers hear whole (a preview otherwise) or served only encrypted are left out, and
 //! albums of nothing else.
@@ -19,7 +21,7 @@ use nori_plugin_sdk::{Manifest, Provider};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use api::{Collection, Like, Located, Paired, PairedSession, Pairing, Posted, Set, Track, User, API};
+use api::{Collection, Entry, Located, Paired, PairedSession, Pairing, Selection, Set, Track, User, API};
 use host::{Host, Nori};
 
 const SITE: &str = "https://soundcloud.com/";
@@ -35,6 +37,8 @@ const CHECK_EVERY: u32 = 3;
 const CLIENT_ID_KEY: &str = "client-id";
 /// Tracks asked for by id at once.
 const IDS_AT_ONCE: usize = 50;
+/// Items asked for each of Home's shelves.
+const SHELF: u32 = 50;
 
 /// The account's session as kept, under the profile's id.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -57,7 +61,7 @@ fn rules(signed_in: bool) -> ProfileRules {
     let mut sections = if signed_in { vec![LibrarySection::Favorites, LibrarySection::Playlists] } else { Vec::new() };
     sections.push(LibrarySection::History);
     // Fetched ahead, a song's segments would have nowhere to be kept: the next one only, by the player.
-    ProfileRules { account: signed_in, downloads: false, radio: true, feed: signed_in, stars: signed_in, scrobbles: false, sections, measures: true, ahead: Some(0) }
+    ProfileRules { account: signed_in, downloads: false, radio: true, feed: true, stars: signed_in, scrobbles: false, sections, measures: true, ahead: Some(0) }
 }
 
 fn error(kind: ErrorKind, detail: impl Into<String>) -> Error {
@@ -83,6 +87,86 @@ fn id_of(id: &str, kind: char) -> Result<u64, Error> {
 
 fn found(songs: Vec<Song>) -> Found {
     Found { songs, albums: Vec::new(), artists: Vec::new(), playlists: Vec::new() }
+}
+
+/// A part of Home, each asked of SoundCloud on its own.
+#[derive(Debug, Clone, Copy)]
+enum Part {
+    /// The account's tracks played last.
+    Played,
+    /// Discover's shelves: signed in, made for the account.
+    Discover,
+    /// What those the account follows post and repost.
+    Stream,
+    /// The account's own playlists.
+    Own,
+    /// The account's liked tracks, and its liked playlists after its own.
+    Likes,
+    /// SoundCloud's trending chart.
+    Trending,
+}
+
+impl Part {
+    fn path(self, me: u64) -> String {
+        match self {
+            Part::Played => format!("/me/play-history/tracks?limit={SHELF}"),
+            Part::Discover => "/mixed-selections?limit=20".into(),
+            Part::Stream => format!("/stream?limit={SHELF}"),
+            Part::Likes => format!("/users/{me}/likes?limit={SHELF}"),
+            Part::Own => format!("/users/{me}/playlists_without_albums?limit={SHELF}"),
+            Part::Trending => format!("/charts?kind=trending&genre=soundcloud:genres:all-music&limit={SHELF}"),
+        }
+    }
+
+    /// Its shelves from SoundCloud's answer, titled as SoundCloud's own pages title them.
+    fn shelves(self, body: &[u8]) -> Result<Vec<Shelf>, Error> {
+        let entries = || parse::<Collection<Entry>>(body).map(|c| c.collection);
+        let tracks = |e: &[Entry]| api::songs(e.iter().filter_map(|e| e.track.as_ref()));
+        let sets = |e: &[Entry]| e.iter().filter_map(|e| e.playlist.as_ref()).map(Set::playlist).collect();
+        Ok(match self {
+            Part::Played => vec![shelf("Recently played", tracks(&entries()?), Vec::new())],
+            Part::Discover => parse::<Collection<Selection>>(body)?.collection.iter().map(|s| shelf(&s.title, Vec::new(), s.playlists())).collect(),
+            Part::Stream => {
+                let e = entries()?;
+                vec![shelf("Stream", tracks(&e), sets(&e))]
+            }
+            Part::Likes => {
+                let e = entries()?;
+                vec![shelf("Your likes", tracks(&e), Vec::new()), shelf("Your playlists", Vec::new(), sets(&e))]
+            }
+            Part::Own => vec![shelf("Your playlists", Vec::new(), parse::<Collection<Set>>(body)?.collection.iter().map(Set::playlist).collect())],
+            Part::Trending => vec![shelf("Trending", tracks(&entries()?), Vec::new())],
+        })
+    }
+}
+
+fn shelf(title: &str, songs: Vec<Song>, playlists: Vec<nori_plugin_sdk::types::Playlist>) -> Shelf {
+    Shelf { title: title.to_string(), songs, albums: Vec::new(), artists: Vec::new(), playlists }
+}
+
+/// `shelves` as one of each title, in the place of the first, each item in it once, the empty left out:
+/// the stream lists a track each time it is reposted, and the account's playlists come in two parts.
+fn joined(shelves: Vec<Shelf>) -> Vec<Shelf> {
+    let mut home: Vec<Shelf> = Vec::new();
+    for s in shelves {
+        let at = home.iter().position(|h| h.title == s.title).unwrap_or_else(|| {
+            home.push(shelf(&s.title, Vec::new(), Vec::new()));
+            home.len() - 1
+        });
+        let h = &mut home[at];
+        for song in s.songs {
+            if !h.songs.iter().any(|o| o.id == song.id) {
+                h.songs.push(song);
+            }
+        }
+        for playlist in s.playlists {
+            if !h.playlists.iter().any(|o| o.id == playlist.id) {
+                h.playlists.push(playlist);
+            }
+        }
+    }
+    home.retain(|s| !(s.title.is_empty() || s.songs.is_empty() && s.playlists.is_empty()));
+    home
 }
 
 /// The profile open: its id, its session, and the site's client id once known.
@@ -133,33 +217,43 @@ impl<H: Host> SoundCloud<H> {
         Ok(id)
     }
 
-    /// Each of `paths` (under the API, or a whole URL of it) answered, asked together with the client id
-    /// and, signed in, the session. Refused, they are asked again once with a new client id; refused
-    /// again, a session ends.
-    fn ask_all(&mut self, method: Method, paths: &[String]) -> Result<Vec<Vec<u8>>, Error> {
+    /// What each of `paths` (under the API, or a whole URL of it) answered, asked together with the
+    /// client id and, signed in, the session. One refused, they are asked again once with a new client
+    /// id; all refused again, a session ends: one part of the API may refuse a session another takes.
+    fn ask_each(&mut self, method: Method, paths: &[String]) -> Result<Vec<Result<Vec<u8>, Error>>, Error> {
+        let refused = |a: &Result<http::Response, Error>| matches!(a, Ok(a) if a.status == 401 || a.status == 403);
         let mut anew = false;
         loop {
             let client_id = self.client_id(anew)?;
             let token = self.signed_in().map(|s| s.token.clone());
             let requests = paths.iter().map(|p| request(method, &address(p, &client_id), token.as_deref())).collect();
-            let answers = self.host.fetch_all(requests).into_iter().collect::<Result<Vec<_>, _>>()?;
-            let refused = answers.iter().any(|a| a.status == 401 || a.status == 403);
-            if refused && !anew {
+            let answers = self.host.fetch_all(requests);
+            if answers.iter().any(refused) && !anew {
                 anew = true;
                 continue;
             }
-            if refused {
+            if answers.iter().all(refused) {
                 if let Some(s) = self.signed_in().cloned() {
                     self.host.log("SoundCloud: the session was refused");
                     self.keep(Some(Session { ended: true, ..s }));
                     return Err(error(ErrorKind::Unauthorized, "SoundCloud ended the session"));
                 }
             }
-            for (path, a) in paths.iter().zip(&answers).filter(|(_, a)| !(200..300).contains(&a.status)) {
+            let answered = |(path, a): (&String, Result<http::Response, Error>)| {
+                let a = a?;
+                if (200..300).contains(&a.status) {
+                    return Ok(a.body);
+                }
                 self.host.log(&format!("SoundCloud: {} answered {}", path.split('?').next().unwrap_or_default(), a.status));
-            }
-            return answers.into_iter().map(|a| if (200..300).contains(&a.status) { Ok(a.body) } else { Err(status(a.status)) }).collect();
+                Err(status(a.status))
+            };
+            return Ok(paths.iter().zip(answers).map(answered).collect());
         }
+    }
+
+    /// Each of `paths` answered, as [`Self::ask_each`] asks them; the first not answered fails them all.
+    fn ask_all(&mut self, method: Method, paths: &[String]) -> Result<Vec<Vec<u8>>, Error> {
+        self.ask_each(method, paths)?.into_iter().collect()
     }
 
     /// The id SoundCloud knows this device by: the one kept, or a new one.
@@ -244,9 +338,10 @@ impl<H: Host> SoundCloud<H> {
         Ok(tracks)
     }
 
-    /// Set `n`, its tracks listed only by id filled in.
-    fn set(&mut self, n: u64) -> Result<(Set, Vec<Track>), Error> {
-        let set: Set = self.ask(format!("/playlists/{n}"))?;
+    /// The set of nori id `id`, its tracks listed only by id filled in.
+    fn set(&mut self, id: &str) -> Result<(Set, Vec<Track>), Error> {
+        let path = api::set_path(id).ok_or_else(|| error(ErrorKind::Parse, format!("{id} is no SoundCloud set")))?;
+        let set: Set = self.ask(path)?;
         let filled = self.tracks(&set.unlisted())?;
         Ok((set, filled))
     }
@@ -276,23 +371,45 @@ impl<H: Host> SoundCloud<H> {
         Ok((user, albums.collection, tracks.collection))
     }
 
-    /// The account's own: its likes, playlists and stream.
+    /// Home: signed in, the account's plays, Discover made for it, its stream, playlists and likes;
+    /// SoundCloud's trending chart and Discover always. Each part is asked on its own, all together: one
+    /// SoundCloud doesn't answer is left out, and Home fails only when none is answered.
+    fn home(&mut self) -> Result<Vec<Shelf>, Error> {
+        let me = self.signed_in().map(|s| s.user);
+        let parts = match me {
+            Some(_) => vec![Part::Played, Part::Discover, Part::Stream, Part::Own, Part::Likes, Part::Trending],
+            None => vec![Part::Trending, Part::Discover],
+        };
+        let paths: Vec<String> = parts.iter().map(|p| p.path(me.unwrap_or_default())).collect();
+        let mut shelves = Vec::new();
+        let mut failed = None;
+        for (part, answer) in parts.into_iter().zip(self.ask_each(Method::Get, &paths)?) {
+            match answer.and_then(|body| part.shelves(&body)) {
+                Ok(s) => shelves.extend(s),
+                Err(e) => {
+                    self.host.log(&format!("SoundCloud: Home's {part:?} left out: {}", e.detail));
+                    failed.get_or_insert(e);
+                }
+            }
+        }
+        match failed {
+            Some(e) if shelves.is_empty() => Err(e),
+            _ => Ok(joined(shelves)),
+        }
+    }
+
+    /// The account's own: its likes and playlists.
     fn mine(&mut self, request: &Request) -> Result<Option<Page>, Error> {
         let Some(me) = self.signed_in().map(|s| s.user) else { return Ok(None) };
         Ok(Some(match request {
             Request::Starred => {
-                let likes: Collection<Like> = self.ask(format!("/users/{me}/track_likes?limit=200"))?;
+                let likes: Collection<Entry> = self.ask(format!("/users/{me}/track_likes?limit=200"))?;
                 let liked = api::songs(likes.collection.iter().filter_map(|l| l.track.as_ref())).into_iter().map(|s| Song { starred: true, ..s }).collect();
                 Page::Found(found(liked))
             }
             Request::Playlists => {
                 let sets: Collection<Set> = self.ask(format!("/users/{me}/playlists_without_albums?limit=200"))?;
                 Page::Playlists(sets.collection.iter().map(Set::playlist).collect())
-            }
-            Request::HomeFeed => {
-                let stream: Collection<Posted> = self.ask("/stream?limit=50".to_string())?;
-                let songs = api::songs(stream.collection.iter().filter_map(|p| p.track.as_ref()));
-                Page::Feed(vec![Shelf { title: "Stream".into(), songs, albums: Vec::new(), artists: Vec::new(), playlists: Vec::new() }])
             }
             _ => return Ok(None),
         }))
@@ -338,7 +455,7 @@ impl<H: Host> Provider for SoundCloud<H> {
 
     fn rules(&mut self, profile: Profile, guest: bool) -> Option<ProfileRules> {
         if guest {
-            return Some(ProfileRules { radio: false, measures: false, sections: Vec::new(), ..rules(false) });
+            return Some(ProfileRules { radio: false, measures: false, feed: false, sections: Vec::new(), ..rules(false) });
         }
         Some(rules(stored(&self.host, &profile.id).is_some_and(|s| !s.ended)))
     }
@@ -353,6 +470,7 @@ impl<H: Host> Provider for SoundCloud<H> {
             return Ok(page);
         }
         Ok(match request {
+            Request::HomeFeed => Page::Feed(self.home()?),
             Request::Search((query, songs, albums, artists)) => Page::Found(self.search(&query, songs, albums, artists)?),
             Request::Song(id) => Page::OneSong(self.ask::<Track>(format!("/tracks/{}", id_of(&id, 't')?))?.song()),
             Request::SimilarSongs((id, count)) => {
@@ -360,11 +478,11 @@ impl<H: Host> Provider for SoundCloud<H> {
                 Page::Songs(api::songs(&related.collection).into_iter().take(count as usize).collect())
             }
             Request::Album(id) => {
-                let (set, filled) = self.set(id_of(&id, 's')?)?;
+                let (set, filled) = self.set(&id)?;
                 Page::Album(set.album_page(&filled))
             }
             Request::Playlist(id) => {
-                let (set, filled) = self.set(id_of(&id, 's')?)?;
+                let (set, filled) = self.set(&id)?;
                 Page::Playlist(set.playlist_page(&filled))
             }
             Request::Artist(id) => {
