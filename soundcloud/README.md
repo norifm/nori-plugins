@@ -1,6 +1,7 @@
 # SoundCloud
 
-Install it, turn it on, then add a SoundCloud profile.
+Install it, turn it on, then add a SoundCloud profile. Signed in, Library is your SoundCloud library:
+your likes in Favorites, your playlists and albums (made and liked), and those you follow as Artists.
 
 ## Good to know
 

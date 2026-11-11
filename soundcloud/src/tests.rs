@@ -2,8 +2,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use nori_plugin_sdk::http;
-use nori_plugin_sdk::provider::{AccountState, Change, CodeCheck, Page, Profile, Request, SignInCode, SignInResult, StarKind, StreamUse};
-use nori_plugin_sdk::types::{Error, Explicit};
+use nori_plugin_sdk::provider::{AccountState, AlbumSort, Change, CodeCheck, LibrarySection, Page, Profile, Request, SignInCode, SignInResult, StarKind, StreamUse};
+use nori_plugin_sdk::types::{Error, ErrorKind, Explicit};
 use nori_plugin_sdk::Provider;
 
 use crate::host::Host;
@@ -203,21 +203,91 @@ fn an_album_counts_and_lists_only_what_plays_whole() {
     assert_eq!(al.album.song_count, 2);
 }
 
-#[test]
-fn signed_in_the_account_has_its_likes() {
+/// A public account's library as SoundCloud answered it, trimmed: its liked tracks (three play whole, a
+/// preview, one blocked), liked sets (four albums, two its own, and four playlists, none listing its
+/// tracks), those it follows, and its own playlists and albums.
+const TRACK_LIKES: &str = include_str!("recorded/track-likes.json");
+const SET_LIKES: &str = include_str!("recorded/playlist-likes.json");
+const FOLLOWINGS: &str = include_str!("recorded/followings.json");
+const OWN_PLAYLISTS: &str = include_str!("recorded/playlists.json");
+const OWN_ALBUMS: &str = include_str!("recorded/albums.json");
+
+/// A plugin signed in as the recorded account, its library answered.
+fn library() -> SoundCloud<Fake> {
     let fake = Fake::default();
-    fake.api("/me", r#"{"id":99,"username":"listener"}"#);
-    fake.api("/users/99/track_likes?limit=200", &page(&[format!(r#"{{"track":{}}}"#, track(1, "ALLOW", &[mp3()]))]));
+    fake.api("/me", r#"{"id":183,"username":"Forss"}"#);
+    fake.api("/users/183/track_likes?limit=200", TRACK_LIKES);
+    fake.api("/users/183/playlist_likes?limit=200", SET_LIKES);
+    fake.api("/users/183/followings?limit=200", FOLLOWINGS);
+    fake.api("/users/183/playlists_without_albums?limit=200", OWN_PLAYLISTS);
+    fake.api("/users/183/albums?limit=200", OWN_ALBUMS);
     let mut p = plugin(fake);
     assert!(p.sign_in_done("https://soundcloud.com/discover".into(), "sc_anonymous_id=1; oauth_token=2-123-abc; other=x".into()));
     assert!(!p.sign_in_done("https://soundcloud.com/signin".into(), "sc_anonymous_id=1".into()));
-    same(p.sign_in("sc_anonymous_id=1; oauth_token=2-123-abc".into()), Some(SignInResult::SignedIn("listener".into())));
-    let Ok(Page::Found(likes)) = p.read(Request::Starred) else { panic!("likes") };
-    assert_eq!(likes.songs.iter().map(|s| (s.id.as_str(), s.starred)).collect::<Vec<_>>(), [("sc-t1", true)]);
+    same(p.sign_in("sc_anonymous_id=1; oauth_token=2-123-abc".into()), Some(SignInResult::SignedIn("Forss".into())));
+    p
+}
+
+fn ids<T>(items: &[T], id: impl Fn(&T) -> (&str, bool)) -> Vec<(&str, bool)> {
+    items.iter().map(id).collect()
+}
+
+#[test]
+fn signed_in_the_library_is_the_accounts_as_soundclouds_own() {
+    let mut p = library();
+    let rules = p.rules(Profile { id: "p1".into(), name: String::new(), address: String::new(), user: String::new(), password: String::new(), api_key: String::new() }, false).unwrap();
+    same(rules.sections, vec![LibrarySection::Albums, LibrarySection::Favorites, LibrarySection::Artists, LibrarySection::Playlists, LibrarySection::History]);
+
+    let Ok(Page::Found(f)) = p.read(Request::Starred) else { panic!("favorites") };
+    assert_eq!(ids(&f.songs, |s| (s.id.as_str(), s.starred)), [("sc-t201247503", true), ("sc-t588195402", true), ("sc-t665861231", true)], "a preview and a blocked track left out");
+    assert_eq!(ids(&f.albums, |a| (a.id.as_str(), a.starred)), [("sc-s335964571", true), ("sc-s249901600", true), ("sc-s18", true), ("sc-s1815863", true)]);
+    assert_eq!(f.albums.iter().map(|a| a.song_count).collect::<Vec<_>>(), [4, 11, 11, 10], "counted as the like counts them");
+    assert_eq!(ids(&f.artists, |a| (a.name.as_str(), a.starred)), [("PREFUSE 73", true), ("The Herbaliser", true), ("MASSIVE ATTACK", true)]);
+    assert_eq!(f.playlists.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["sc-s272741983", "sc-s729308781", "sc-s713728041", "sc-s587718525"]);
+
+    let Ok(Page::Artists(artists)) = p.read(Request::Artists) else { panic!("artists") };
+    assert_eq!(artists.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["sc-u2342913", "sc-u2836180", "sc-u19049343"]);
+
+    let Ok(Page::Playlists(lists)) = p.read(Request::Playlists) else { panic!("playlists") };
+    let lists: Vec<(&str, u32)> = lists.iter().map(|l| (l.id.as_str(), l.song_count)).collect();
+    assert_eq!(lists, [("sc-s2050462", 2), ("sc-s75", 2), ("sc-s272741983", 50), ("sc-s729308781", 100), ("sc-s713728041", 4), ("sc-s587718525", 4)], "its own, then those it liked");
+
+    let Ok(Page::Albums(albums)) = p.read(Request::Albums((AlbumSort::Newest, 50, 0))) else { panic!("albums") };
+    assert_eq!(ids(&albums, |a| (a.id.as_str(), a.starred)), [("sc-s1815863", true), ("sc-s18", true), ("sc-s335964571", true), ("sc-s249901600", true)], "its own (both liked), then those it liked");
+    let Ok(Page::Albums(liked)) = p.read(Request::Albums((AlbumSort::Starred, 50, 0))) else { panic!("liked albums") };
+    assert_eq!(liked.len(), 4);
+    assert!(matches!(p.read(Request::Albums((AlbumSort::Newest, 50, 50))), Ok(Page::Albums(a)) if a.is_empty()), "all of them on the first page");
     assert!(p.host.asked.borrow().iter().filter(|(_, u, _)| u.contains("api-v2")).all(|(_, _, auth)| auth.as_deref() == Some("OAuth 2-123-abc")));
-    p.host.answer("https://api-v2.soundcloud.com/users/99/track_likes/1", 200, "");
-    p.write(Change::Star((StarKind::Song, "sc-t1".into(), false))).unwrap();
-    assert_eq!(p.host.asked.borrow().last().map(|(m, _, _)| *m), Some(http::Method::Delete));
+}
+
+#[test]
+fn a_favorite_is_a_like_or_a_follow() {
+    let mut p = library();
+    for (change, method, url) in [
+        (Change::Star((StarKind::Song, "sc-t1".into(), false)), http::Method::Delete, "/users/183/track_likes/1"),
+        (Change::Star((StarKind::Album, "sc-s18".into(), true)), http::Method::Put, "/users/183/playlist_likes/18"),
+        (Change::Star((StarKind::Artist, "sc-u2342913".into(), true)), http::Method::Post, "/me/followings/2342913"),
+        (Change::Star((StarKind::Artist, "sc-u2342913".into(), false)), http::Method::Delete, "/me/followings/2342913"),
+    ] {
+        p.host.api(url, "");
+        p.write(change).unwrap();
+        let asked = p.host.asked.borrow();
+        let (m, u, _) = asked.last().unwrap();
+        assert_eq!((*m, u.split('?').next().unwrap()), (method, format!("https://api-v2.soundcloud.com{url}").as_str()));
+    }
+}
+
+#[test]
+fn what_the_account_may_not_do_fails_alone() {
+    let mut p = library();
+    let pages = |p: &SoundCloud<Fake>| p.host.asked.borrow().iter().filter(|(_, u, _)| u == "https://soundcloud.com/").count();
+    let before = pages(&p);
+    p.host.answer("https://api-v2.soundcloud.com/users/183/track_likes/1", 403, "");
+    let refused = p.write(Change::Star((StarKind::Song, "sc-t1".into(), true))).unwrap_err();
+    assert_eq!(refused.kind, ErrorKind::Refused);
+    same(p.account(), Some(AccountState::SignedIn));
+    assert_eq!(pages(&p), before, "the client id is still taken: not asked for again");
+    assert!(matches!(p.read(Request::Artists), Ok(Page::Artists(a)) if a.len() == 3), "the library is still the account's");
 }
 
 #[test]
@@ -227,8 +297,8 @@ fn a_refused_session_ends_and_signed_out_there_is_nowhere_to_like() {
     let mut p = plugin(fake);
     p.sign_in("2-123-abc".into());
     // SoundCloud refuses the session whatever the client id.
-    p.host.answer("https://api-v2.soundcloud.com/users/99/track_likes?limit=200", 401, "");
-    assert!(p.read(Request::Starred).is_err());
+    p.host.answer("https://api-v2.soundcloud.com/users/99/followings?limit=200", 401, "");
+    assert!(p.read(Request::Artists).is_err());
     same(p.account(), Some(AccountState::Ended));
     assert!(p.write(Change::Star((StarKind::Song, "sc-t1".into(), true))).is_err());
     same(p.sign_in("no session here".into()), Some(SignInResult::NoSession));
@@ -300,7 +370,7 @@ fn an_allowed_code_signs_in_as_the_cookie_does() {
         fake.answer(&format!("{CODES}/AB12?poll_token=p%2Ft%2B1"), 200, r#"{"status":"activated"}"#);
         fake.answer("https://api-reg.soundcloud.com/pairing/sign-in", status, answer);
         fake.api("/me", r#"{"id":99,"username":"listener"}"#);
-        fake.api("/users/99/track_likes?limit=200", &page(&[format!(r#"{{"track":{}}}"#, track(1, "ALLOW", &[mp3()]))]));
+        fake.api("/users/99/followings?limit=200", &page(&[r#"{"id":7,"username":"maker"}"#.into()]));
         let mut p = plugin(fake);
         let signed_in = want.is_some();
         same(p.check_code(code()), Some(CodeCheck::Done(want.unwrap_or(SignInResult::Refused))));
@@ -311,7 +381,7 @@ fn an_allowed_code_signs_in_as_the_cookie_does() {
             continue;
         }
         same(p.account(), Some(AccountState::SignedIn));
-        assert!(matches!(p.read(Request::Starred), Ok(Page::Found(f)) if f.songs.len() == 1));
+        assert!(matches!(p.read(Request::Artists), Ok(Page::Artists(a)) if a.len() == 1));
         assert!(p.host.asked.borrow().iter().filter(|(_, u, _)| u.contains("api-v2")).all(|(_, _, auth)| auth.as_deref() == Some("OAuth 2-9-xyz")));
         // Kept: the profile opened again is still signed in.
         p.open(Profile { id: "p1".into(), name: String::new(), address: String::new(), user: String::new(), password: String::new(), api_key: String::new() });

@@ -1,7 +1,8 @@
 //! SoundCloud as a nori provider, over the API its own site speaks: search, artists, albums and
 //! playlists, and played as HLS of MP3 segments, which nori reads as one stream. Signed in (a code allowed
-//! in any browser, or the site's own sign-in page and its `oauth_token` cookie) it adds the account's
-//! likes as favorites and its playlists. Home is SoundCloud's own: what is trending and its Discover
+//! in any browser, or the site's own sign-in page and its `oauth_token` cookie) its library is the
+//! account's, as SoundCloud's own Library has it: its likes as favorites, its playlists and albums, those
+//! it made and those it liked, and those it follows as its artists. Home is SoundCloud's own: what is trending and its Discover
 //! shelves, and signed in the account's plays, stream, likes and playlists before them. Best effort: the
 //! site's client id is taken from its scripts, as the site does, and asked for again when SoundCloud
 //! stops taking it.
@@ -14,9 +15,9 @@ mod host;
 
 use nori_plugin_sdk::http::{self, Method};
 use nori_plugin_sdk::provider::{
-    AccountState, Change, CodeCheck, Field, FieldSpec, LibrarySection, Page, Profile, ProfileRules, ProviderInfo, Request, SignInCode, SignInResult, SignInWay, StarKind, StreamSource, StreamUse,
+    AccountState, AlbumSort, Change, CodeCheck, Field, FieldSpec, LibrarySection, Page, Profile, ProfileRules, ProviderInfo, Request, SignInCode, SignInResult, SignInWay, StarKind, StreamSource, StreamUse,
 };
-use nori_plugin_sdk::types::{Error, ErrorKind, Found, Header, Shelf, Song};
+use nori_plugin_sdk::types::{Album, Artist, Error, ErrorKind, Found, Header, Playlist, Shelf, Song};
 use nori_plugin_sdk::{Manifest, Provider};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -39,6 +40,8 @@ const CLIENT_ID_KEY: &str = "client-id";
 const IDS_AT_ONCE: usize = 50;
 /// Items asked for each of Home's shelves.
 const SHELF: u32 = 50;
+/// Items asked for each of the account's lists: one page.
+const LISTED: u32 = 200;
 
 /// The account's session as kept, under the profile's id.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -58,7 +61,7 @@ fn stored(host: &impl Host, profile: &str) -> Option<Session> {
 }
 
 fn rules(signed_in: bool) -> ProfileRules {
-    let mut sections = if signed_in { vec![LibrarySection::Favorites, LibrarySection::Playlists] } else { Vec::new() };
+    let mut sections = if signed_in { vec![LibrarySection::Albums, LibrarySection::Favorites, LibrarySection::Artists, LibrarySection::Playlists] } else { Vec::new() };
     sections.push(LibrarySection::History);
     // Fetched ahead, a song's segments would have nowhere to be kept: the next one only, by the player.
     ProfileRules { account: signed_in, downloads: false, radio: true, feed: true, stars: signed_in, scrobbles: false, sections, measures: true, ahead: Some(0) }
@@ -68,9 +71,12 @@ fn error(kind: ErrorKind, detail: impl Into<String>) -> Error {
     Error { kind, detail: detail.into() }
 }
 
+/// An answer's status as an error. SoundCloud answers 401 to a client id or session it no longer takes,
+/// 403 to what the account may not do.
 fn status(code: u16) -> Error {
     let kind = match code {
-        401 | 403 => ErrorKind::Unauthorized,
+        401 => ErrorKind::Unauthorized,
+        403 => ErrorKind::Refused,
         404 => ErrorKind::NotFound,
         _ => ErrorKind::Other,
     };
@@ -85,8 +91,34 @@ fn id_of(id: &str, kind: char) -> Result<u64, Error> {
     api::number(id, kind).ok_or_else(|| error(ErrorKind::Parse, format!("{id} is no SoundCloud id")))
 }
 
-fn found(songs: Vec<Song>) -> Found {
-    Found { songs, albums: Vec::new(), artists: Vec::new(), playlists: Vec::new() }
+/// The account's liked tracks, as its favorites.
+fn liked_tracks(body: &[u8]) -> Result<Vec<Song>, Error> {
+    let likes: Collection<Entry> = parse(body)?;
+    Ok(api::songs(likes.collection.iter().filter_map(|l| l.track.as_ref())).into_iter().map(|s| Song { starred: true, ..s }).collect())
+}
+
+/// The sets the account liked: its albums, as its favorites, and its playlists.
+fn liked_sets(body: &[u8]) -> Result<(Vec<Album>, Vec<Playlist>), Error> {
+    let likes: Collection<Entry> = parse(body)?;
+    let (albums, playlists): (Vec<&Set>, Vec<&Set>) = likes.collection.iter().filter_map(|l| l.playlist.as_ref()).partition(|s| s.is_album);
+    Ok((api::albums_of(albums).into_iter().map(|a| Album { starred: true, ..a }).collect(), playlists.into_iter().map(Set::playlist).collect()))
+}
+
+/// Those the account follows, as its favorite artists.
+fn followed(body: &[u8]) -> Result<Vec<Artist>, Error> {
+    Ok(parse::<Collection<User>>(body)?.collection.iter().map(|u| Artist { starred: true, ..u.artist() }).collect())
+}
+
+/// The account's own albums, then those it liked; its own it also liked are its favorites.
+fn library_albums(own: Vec<Album>, liked: Vec<Album>) -> Vec<Album> {
+    let mut all = own;
+    for a in liked {
+        match all.iter_mut().find(|o| o.id == a.id) {
+            Some(o) => o.starred = true,
+            None => all.push(a),
+        }
+    }
+    all
 }
 
 /// A part of Home, each asked of SoundCloud on its own.
@@ -218,10 +250,11 @@ impl<H: Host> SoundCloud<H> {
     }
 
     /// What each of `paths` (under the API, or a whole URL of it) answered, asked together with the
-    /// client id and, signed in, the session. One refused, they are asked again once with a new client
-    /// id; all refused again, a session ends: one part of the API may refuse a session another takes.
+    /// client id and, signed in, the session. One refused (401), they are asked again once with a new
+    /// client id; all refused again, a session ends: one part of the API may refuse a session another
+    /// takes. What the account may not do (403) fails alone.
     fn ask_each(&mut self, method: Method, paths: &[String]) -> Result<Vec<Result<Vec<u8>, Error>>, Error> {
-        let refused = |a: &Result<http::Response, Error>| matches!(a, Ok(a) if a.status == 401 || a.status == 403);
+        let refused = |a: &Result<http::Response, Error>| matches!(a, Ok(a) if a.status == 401);
         let mut anew = false;
         loop {
             let client_id = self.client_id(anew)?;
@@ -398,18 +431,35 @@ impl<H: Host> SoundCloud<H> {
         }
     }
 
-    /// The account's own: its likes and playlists.
+    /// The account's library, as SoundCloud's own Library has it: its likes (tracks and sets), its own
+    /// playlists and albums and those it follows, a page of each.
     fn mine(&mut self, request: &Request) -> Result<Option<Page>, Error> {
         let Some(me) = self.signed_in().map(|s| s.user) else { return Ok(None) };
+        let list = |what: &str| format!("/users/{me}/{what}?limit={LISTED}");
         Ok(Some(match request {
             Request::Starred => {
-                let likes: Collection<Entry> = self.ask(format!("/users/{me}/track_likes?limit=200"))?;
-                let liked = api::songs(likes.collection.iter().filter_map(|l| l.track.as_ref())).into_iter().map(|s| Song { starred: true, ..s }).collect();
-                Page::Found(found(liked))
+                let got = self.ask_all(Method::Get, &[list("track_likes"), list("playlist_likes"), list("followings")])?;
+                let (albums, playlists) = liked_sets(&got[1])?;
+                Page::Found(Found { songs: liked_tracks(&got[0])?, albums, artists: followed(&got[2])?, playlists })
             }
+            Request::Artists => Page::Artists(followed(&self.ask_all(Method::Get, &[list("followings")])?[0])?),
             Request::Playlists => {
-                let sets: Collection<Set> = self.ask(format!("/users/{me}/playlists_without_albums?limit=200"))?;
-                Page::Playlists(sets.collection.iter().map(Set::playlist).collect())
+                let got = self.ask_all(Method::Get, &[list("playlists_without_albums"), list("playlist_likes")])?;
+                let mut all: Vec<Playlist> = parse::<Collection<Set>>(&got[0])?.collection.iter().map(Set::playlist).collect();
+                for p in liked_sets(&got[1])?.1 {
+                    if !all.iter().any(|o| o.id == p.id) {
+                        all.push(p);
+                    }
+                }
+                Page::Playlists(all)
+            }
+            // One page: every one of them is on the first.
+            Request::Albums((_, _, offset)) if *offset > 0 => Page::Albums(Vec::new()),
+            Request::Albums((AlbumSort::Starred, ..)) => Page::Albums(liked_sets(&self.ask_all(Method::Get, &[list("playlist_likes")])?[0])?.0),
+            Request::Albums(_) => {
+                let got = self.ask_all(Method::Get, &[list("albums"), list("playlist_likes")])?;
+                let own = api::albums_of(&parse::<Collection<Set>>(&got[0])?.collection);
+                Page::Albums(library_albums(own, liked_sets(&got[1])?.0))
             }
             _ => return Ok(None),
         }))
@@ -494,17 +544,18 @@ impl<H: Host> Provider for SoundCloud<H> {
         })
     }
 
-    /// A song's favorite is the account's like; nothing else has anywhere to go.
+    /// A song's or album's favorite is the account's like, an artist's its follow; nothing else has
+    /// anywhere to go.
     fn write(&mut self, change: Change) -> Result<(), Error> {
         let nowhere = || error(ErrorKind::Unsupported, "SoundCloud has nowhere to send it");
         let Some(me) = self.signed_in().map(|s| s.user) else { return Err(nowhere()) };
-        match change {
-            Change::Star((StarKind::Song, id, on)) => {
-                let path = format!("/users/{me}/track_likes/{}", id_of(&id, 't')?);
-                self.ask_all(if on { Method::Put } else { Method::Delete }, &[path]).map(drop)
-            }
-            _ => Err(nowhere()),
-        }
+        let (method, path) = match change {
+            Change::Star((StarKind::Song, id, on)) => (if on { Method::Put } else { Method::Delete }, format!("/users/{me}/track_likes/{}", id_of(&id, 't')?)),
+            Change::Star((StarKind::Album, id, on)) => (if on { Method::Put } else { Method::Delete }, format!("/users/{me}/playlist_likes/{}", id_of(&id, 's')?)),
+            Change::Star((StarKind::Artist, id, on)) => (if on { Method::Post } else { Method::Delete }, format!("/me/followings/{}", id_of(&id, 'u')?)),
+            _ => return Err(nowhere()),
+        };
+        self.ask_all(method, &[path]).map(drop)
     }
 
     /// The track's MP3 segments' playlist, at the address SoundCloud gives it now; no downloads.
@@ -545,7 +596,7 @@ impl<H: Host> Provider for SoundCloud<H> {
         let answer = loop {
             let client_id = self.client_id(anew)?;
             let answer = self.post("/codes", &client_id, device.clone())?;
-            if matches!(answer.status, 401 | 403) && !anew {
+            if answer.status == 401 && !anew {
                 anew = true;
                 continue;
             }

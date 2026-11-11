@@ -85,8 +85,12 @@ pub(crate) struct Set {
     /// Milliseconds.
     #[serde(default)]
     pub duration: u64,
+    /// None listed in a like, which only counts them (`track_count`).
     #[serde(default)]
     pub tracks: Vec<Track>,
+    pub track_count: Option<u32>,
+    #[serde(default)]
+    pub is_album: bool,
     pub release_date: Option<String>,
     pub display_date: Option<String>,
 }
@@ -265,13 +269,20 @@ pub(crate) fn albums_of<'a>(sets: impl IntoIterator<Item = &'a Set>) -> Vec<Albu
 }
 
 impl Set {
-    /// Whether nori plays one of the tracks it lists whole; those it lists by id are mostly alike.
+    /// Whether nori plays one of the tracks it lists whole; those it lists by id are mostly alike. One
+    /// listing none (a like) plays when it counts any.
     fn plays(&self) -> bool {
+        if self.tracks.is_empty() {
+            return self.playable() > 0;
+        }
         self.tracks.iter().any(|t| t.media.is_some() && t.may_play())
     }
 
-    /// How many of its tracks nori may play.
+    /// How many of its tracks nori may play; of one listing none (a like), as many as it counts.
     fn playable(&self) -> u32 {
+        if self.tracks.is_empty() {
+            return self.track_count.unwrap_or(0);
+        }
         self.tracks.iter().filter(|t| t.may_play()).count() as u32
     }
 
