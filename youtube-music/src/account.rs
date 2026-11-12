@@ -52,6 +52,7 @@ impl<H: Host + Sync> YouTube<H> {
         if let Some(k) = kept.as_ref().filter(|k| !k.ended) {
             api.set_cookies(Some(yt::Cookies::parse(&k.cookies)));
         }
+        api.set_channel(crate::channel::chosen(&self.host, &profile).and_then(|c| c.page_id));
         self.open = crate::Open { profile, api, kept, ..Default::default() };
     }
 
@@ -168,6 +169,9 @@ impl<H: Host + Sync> YouTube<H> {
                 self.open.api.take_changed();
                 // Fresh from the browser: it was just rotated.
                 self.keep(Some(Kept { cookies, rotated_at: unix_now(), ended: false, quiet: false }));
+                // Maybe another account: served as its own channel.
+                self.forget_channel();
+                self.show_channel();
                 SignInResult::SignedIn(name)
             }
             Err(e) => {
@@ -184,6 +188,8 @@ impl<H: Host + Sync> YouTube<H> {
     pub(crate) fn forget_session(&mut self) {
         self.open.api.set_cookies(None);
         self.keep(None);
+        self.forget_channel();
+        self.show_channel();
     }
 
     /// An ended session not yet asked to be quiet: the client reminds to sign in again at start.

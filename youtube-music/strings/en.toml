@@ -1,2 +1,6 @@
 name = "YouTube Music"
 about = "Search and play YouTube Music. Best effort: YouTube can stop it working at any time. Sign in with Google to see your own Home, your library and your likes."
+channel = "Channel"
+channel_is = "{0}"
+channel_own = "The account's own"
+next_channel = "Switch Channel"

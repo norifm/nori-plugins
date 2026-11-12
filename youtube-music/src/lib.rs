@@ -6,6 +6,7 @@
 //! `stream-source` cannot say.
 
 mod account;
+mod channel;
 mod host;
 
 use std::collections::HashMap;
@@ -16,7 +17,7 @@ use nori_plugin_sdk::provider::{
     AccountState, Change, Field, FieldSpec, LibrarySection, Page, Profile, ProfileRules, ProviderInfo, Request, SignInResult, SignInWay, StarKind, StreamSource, StreamUse,
 };
 use nori_plugin_sdk::types::{Album, AlbumPage, Artist, ArtistAbout, ArtistPage, ArtistRef, Error, ErrorKind, Explicit, Found, Playlist, PlaylistPage, Shelf, Song};
-use nori_plugin_sdk::{Manifest, Provider};
+use nori_plugin_sdk::{Lifecycle, Manifest, Provider, Row, RowKind};
 
 use account::Kept;
 use host::{block, Host, Nori, Wire};
@@ -286,7 +287,8 @@ impl<H: Host + Sync> Provider for YouTube<H> {
     }
 
     fn open(&mut self, profile: Profile) {
-        self.load(profile.id)
+        self.load(profile.id);
+        self.show_channel();
     }
 
     /// Signed in, the library's reads are the account's: its saved albums, the artists it subscribes to
@@ -389,6 +391,14 @@ impl<H: Host + Sync> Provider for YouTube<H> {
     }
 }
 
+impl<H: Host + Sync> Lifecycle for YouTube<H> {
+    fn action(&mut self, id: String) {
+        if id == channel::NEXT {
+            self.next_channel();
+        }
+    }
+}
+
 const MANIFEST: Manifest = Manifest {
     net: &[
         "music.youtube.com",
@@ -404,10 +414,11 @@ const MANIFEST: Manifest = Manifest {
         "lh3.googleusercontent.com",
     ],
     signin: &["*.youtube.com"],
+    rows: &[Row::new(channel::CHANNEL, RowKind::Status), Row::new(channel::NEXT, RowKind::Action)],
     ..Manifest::new("fm.nori.youtube-music")
 };
 
-nori_plugin_sdk::plugin!(YouTube, MANIFEST, provider);
+nori_plugin_sdk::plugin!(YouTube, MANIFEST, provider, lifecycle);
 
 #[cfg(test)]
 mod tests;

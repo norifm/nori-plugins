@@ -4,9 +4,9 @@ use std::future::Future;
 
 use innertube_music as yt;
 use nori_plugin_sdk::types::{Error, Header};
-use nori_plugin_sdk::{fetching, http, log, store};
+use nori_plugin_sdk::{fetching, http, log, rows, store};
 
-/// nori's HTTP, the plugin's store and its log.
+/// nori's HTTP, the plugin's store, its page's rows and its log.
 pub(crate) trait Host {
     fn fetch(&self, request: yt::Request) -> Result<yt::Response, Error>;
     /// [`Host::fetch`] on its way beside others polled with it.
@@ -17,6 +17,10 @@ pub(crate) trait Host {
     fn set(&self, key: &str, value: &[u8]);
     fn remove(&self, key: &str);
     fn log(&self, line: &str);
+    /// Row `row`'s live line: `words` from the strings, with `args` in them.
+    fn status(&self, row: &str, words: &str, args: &[String]);
+    /// Shows or hides row `row`.
+    fn show(&self, row: &str, shown: bool);
 }
 
 /// The host's imports.
@@ -61,6 +65,14 @@ impl Host for Nori {
 
     fn log(&self, line: &str) {
         log::write(log::Level::Info, line)
+    }
+
+    fn status(&self, row: &str, words: &str, args: &[String]) {
+        rows::set_status(row, words, args)
+    }
+
+    fn show(&self, row: &str, shown: bool) {
+        rows::set_shown(row, shown, true)
     }
 }
 

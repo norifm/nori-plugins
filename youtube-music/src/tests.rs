@@ -7,12 +7,13 @@ use super::*;
 use account::unix_now;
 
 /// Answers each request with the next queued answer and keeps what was asked; with none left the
-/// network is down. Its store is a map of its own.
+/// network is down. Its store is a map of its own; its page's rows as last set.
 #[derive(Default)]
 struct Fake {
     answers: Mutex<Vec<yt::Response>>,
     asked: Mutex<Vec<yt::Request>>,
     store: Mutex<BTreeMap<String, Vec<u8>>>,
+    rows: Mutex<BTreeMap<String, (bool, String)>>,
 }
 
 impl Host for Fake {
@@ -34,6 +35,14 @@ impl Host for Fake {
     }
 
     fn log(&self, _: &str) {}
+
+    fn status(&self, row: &str, words: &str, args: &[String]) {
+        self.rows.lock().unwrap().entry(row.into()).or_insert((true, String::new())).1 = [words.to_string()].into_iter().chain(args.iter().cloned()).collect::<Vec<_>>().join(" ");
+    }
+
+    fn show(&self, row: &str, shown: bool) {
+        self.rows.lock().unwrap().entry(row.into()).or_insert((shown, String::new())).0 = shown;
+    }
 }
 
 fn fixture(name: &str) -> String {
@@ -518,4 +527,50 @@ fn the_manifest_reaches_every_host() {
         let host = url.strip_prefix("https://").and_then(|r| r.split('/').next()).unwrap();
         assert!(reaches(host), "{host}");
     }
+}
+
+/// The channel row as shown: whether it is there, and its line's words and arguments.
+fn channel_row(yt: &YouTube<Fake>) -> (bool, String) {
+    yt.host.rows.lock().unwrap().get(channel::CHANNEL).cloned().unwrap_or_default()
+}
+
+/// Who request `n` asks to be served as.
+fn served_as(yt: &YouTube<Fake>, n: usize) -> Option<String> {
+    let asked = yt.host.asked.lock().unwrap();
+    let body: serde_json::Value = serde_json::from_str(asked[n].body.as_deref().unwrap()).unwrap();
+    body.pointer("/context/user/onBehalfOfUser").and_then(serde_json::Value::as_str).map(String::from)
+}
+
+/// Switching goes to the account's next channel, whose library is read from then on, and round to its
+/// own again; reopened, the profile is still served as the channel switched to.
+#[test]
+fn switching_channels_serves_the_next_one() {
+    let mut yt = signed_in(30, vec![answer(200, "accounts_list", &[]), answer(200, "library_playlists", &[])]);
+    assert_eq!(channel_row(&yt), (true, "channel_own".into()));
+    yt.action(channel::NEXT.into());
+    assert_eq!(channel_row(&yt), (true, "channel_is Ada's covers".into()));
+    yt.read(Request::Playlists).unwrap();
+    assert_eq!(urls(&yt), ["https://www.youtube.com/youtubei/v1/account/accounts_list", BROWSE]);
+    assert_eq!(served_as(&yt, 1).as_deref(), Some("100000000000000000001"));
+
+    let store = yt.host.store.lock().unwrap().clone();
+    let mut again = opened(store, vec![answer(200, "library_playlists", &[]), answer(200, "accounts_list", &[]), answer(200, "library_playlists", &[])]);
+    assert_eq!(channel_row(&again), (true, "channel_is Ada's covers".into()));
+    again.read(Request::Playlists).unwrap();
+    assert_eq!(served_as(&again, 0).as_deref(), Some("100000000000000000001"), "kept for the profile");
+    again.action(channel::NEXT.into());
+    again.read(Request::Playlists).unwrap();
+    assert_eq!((served_as(&again, 2), channel_row(&again)), (None, (true, "channel_is Ada".into())), "round to the account's own");
+}
+
+/// Signed out, the channel rows go and the channel switched to is forgotten; never signed in, they are
+/// not there.
+#[test]
+fn signing_out_forgets_the_channel() {
+    let mut yt = signed_in(30, vec![answer(200, "accounts_list", &[])]);
+    yt.action(channel::NEXT.into());
+    yt.sign_out();
+    assert!(!channel_row(&yt).0);
+    assert!(channel::chosen(&yt.host, "yt").is_none());
+    assert!(!channel_row(&youtube(Vec::new())).0);
 }
