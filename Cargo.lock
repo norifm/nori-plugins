@@ -156,7 +156,7 @@ dependencies = [
 [[package]]
 name = "innertube-music"
 version = "0.1.0"
-source = "git+https://github.com/filipton/innertube-music#85ef0a823e27f9fbb89f5ba105333a34b10a061d"
+source = "git+https://github.com/filipton/innertube-music#11d5913ab57d609759a178477e4deac39163e50d"
 dependencies = [
  "serde_json",
  "sha1_smol",
@@ -509,7 +509,7 @@ dependencies = [
 
 [[package]]
 name = "youtube-music"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "innertube-music",
  "nori-plugin-sdk",
