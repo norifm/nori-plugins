@@ -7,7 +7,7 @@ use nori_plugin_sdk::types::{Error, ErrorKind, Explicit};
 use nori_plugin_sdk::Provider;
 
 use crate::host::Host;
-use crate::SoundCloud;
+use crate::{Session, SoundCloud};
 
 /// Answers by URL, without its client id: each a status and a body. Every request kept as (method, URL,
 /// Authorization header), and each body as (URL, JSON); a body not sent as JSON is refused.
@@ -288,6 +288,25 @@ fn what_the_account_may_not_do_fails_alone() {
     same(p.account(), Some(AccountState::SignedIn));
     assert_eq!(pages(&p), before, "the client id is still taken: not asked for again");
     assert!(matches!(p.read(Request::Artists), Ok(Page::Artists(a)) if a.len() == 3), "the library is still the account's");
+}
+
+/// The account's picture is its avatar: kept on signing in, asked for once when a session has none.
+#[test]
+fn the_picture_is_the_avatar() {
+    let fake = Fake::default();
+    fake.api("/me", r#"{"id":99,"username":"listener","avatar_url":"https://i1.sndcdn.com/avatars-99-large.jpg"}"#);
+    let mut p = plugin(fake);
+    same(p.account_picture(), None);
+    p.sign_in("2-123-abc".into());
+    let avatar = Some("https://i1.sndcdn.com/avatars-99-t500x500.jpg".to_string());
+    same(p.account_picture(), avatar.clone());
+
+    let without = Session { picture: None, ..p.signed_in().unwrap().clone() };
+    p.keep(Some(without));
+    let asked = p.host.asked.borrow().len();
+    same(p.account_picture(), avatar.clone());
+    same(p.account_picture(), avatar);
+    assert_eq!(p.host.asked.borrow().len(), asked + 1, "/me asked once");
 }
 
 #[test]

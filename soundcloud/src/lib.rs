@@ -50,6 +50,9 @@ struct Session {
     user: u64,
     name: String,
     ended: bool,
+    /// The account's avatar.
+    #[serde(default)]
+    picture: Option<String>,
 }
 
 fn session_key(profile: &str) -> String {
@@ -320,7 +323,7 @@ impl<H: Host> SoundCloud<H> {
         match answer.status {
             200..=299 => match parse::<User>(&answer.body) {
                 Ok(me) => {
-                    self.keep(Some(Session { token, user: me.id, name: me.username.clone(), ended: false }));
+                    self.keep(Some(Session { token, user: me.id, name: me.username.clone(), ended: false, picture: me.avatar_url.as_deref().map(api::cover) }));
                     SignInResult::SignedIn(me.username)
                 }
                 Err(e) => SignInResult::Unreachable(e.detail),
@@ -491,7 +494,7 @@ fn random() -> u128 {
 
 impl<H: Host> Provider for SoundCloud<H> {
     fn info(&mut self) -> Option<ProviderInfo> {
-        Some(ProviderInfo { fields: vec![FieldSpec { field: Field::Name, advanced: false }], sign_in: vec![SignInWay::Code, SignInWay::WebPage(SIGN_IN_PAGE.to_string()), SignInWay::Paste] })
+        Some(ProviderInfo { fields: vec![FieldSpec { field: Field::Name, advanced: false }], sign_in: vec![SignInWay::Code, SignInWay::WebPage(SIGN_IN_PAGE.to_string()), SignInWay::Paste], identities: None })
     }
 
     fn ready(&mut self, _: Profile) -> bool {
@@ -629,6 +632,18 @@ impl<H: Host> Provider for SoundCloud<H> {
 
     fn sign_out(&mut self) {
         self.keep(None)
+    }
+
+    fn account_picture(&mut self) -> Option<String> {
+        let session = self.signed_in()?.clone();
+        if session.picture.is_some() {
+            return session.picture;
+        }
+        // A session kept without one: SoundCloud is asked once.
+        let me = self.ask_all(Method::Get, &["/me".into()]).ok()?.remove(0);
+        let picture = parse::<User>(&me).ok()?.avatar_url.as_deref().map(api::cover)?;
+        self.keep(Some(Session { picture: Some(picture.clone()), ..session }));
+        Some(picture)
     }
 
     fn account(&mut self) -> Option<AccountState> {

@@ -167,7 +167,7 @@ pub(crate) fn number(id: &str, kind: char) -> Option<u64> {
 }
 
 /// An artwork or avatar URL at 500 pixels: SoundCloud serves a few fixed sizes, named in the file.
-fn cover(url: &str) -> String {
+pub(crate) fn cover(url: &str) -> String {
     url.replace("-large.", "-t500x500.")
 }
 
