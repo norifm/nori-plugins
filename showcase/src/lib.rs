@@ -36,6 +36,7 @@ fn query(s: &str) -> String {
 impl Lifecycle for Showcase {
     fn start(&mut self) {
         rows::set_status("status", "started_at", &[now_utc()]);
+        rows::set(&[("meter".into(), Value::Level(64.0))]);
     }
 
     fn changed(&mut self, row: String, _: Value) {
@@ -92,14 +93,20 @@ const MANIFEST: Manifest = Manifest {
         Row::switch("switch", true),
         Row::choice("choice", &["small", "medium", "large"], 1),
         Row::level("level", -6.0, 6.0, 0.01, 0.0).unit("level_unit").hint("level_hint"),
+        Row::segments("segments", &["small", "medium", "large"], 0),
+        Row::flags("flags", &["mon", "wed", "fri"], 5),
+        Row::meter("meter", 0.0, 100.0).unit("meter_unit").glyph(Glyph::Gauge),
         Row::new("words", RowKind::Section),
         Row::new("text", RowKind::Text),
         Row::new("secret", RowKind::Secret),
         Row::new("more", RowKind::Section),
-        Row::new("action", RowKind::Action),
-        Row::new("status", RowKind::Status),
+        Row::new("action", RowKind::Action).glyph(Glyph::Play),
+        Row::new("status", RowKind::Status).glyph(Glyph::Timer),
+        Row::link("link", "https://norifm.com").glyph(Glyph::Globe),
+        Row::page("page").hint("page_hint").glyph(Glyph::Sparkle),
         Row::new("note", RowKind::Note),
-        Row::link("link", "https://norifm.com"),
+        Row::switch("page_switch", false).on("page"),
+        Row::new("page_note", RowKind::Note).on("page"),
     ],
     menu: &[
         MenuAction { id: "song_facts", glyph: Glyph::Info, kinds: &[ItemKind::Song] },
