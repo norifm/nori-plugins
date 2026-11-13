@@ -7,7 +7,7 @@ use nori_plugin_sdk::device_control::{Battery, DeviceState, Noise};
 use nori_plugin_sdk::hooks::Event;
 use nori_plugin_sdk::{log, rows};
 use nori_plugin_sdk::types::Value;
-use nori_plugin_sdk::{DeviceControl, DeviceFilter, Hooks, Lifecycle, Manifest, Row, RowKind};
+use nori_plugin_sdk::{DeviceControl, DeviceFilter, Glyph, Hooks, Lifecycle, Manifest, Row, RowKind};
 
 use crate::protocol::{request, take_packets, Ambient, Link, Status, LDAC, REQUEST_STATE, SET_SOUND_MODES};
 use crate::models::{self, Model};
@@ -114,8 +114,18 @@ impl Buds {
         if !self.told_rows {
             let model = self.status.model;
             let has = model.map(settings::rows_of).unwrap_or_default();
+            let has_row = |row: &Row| {
+                model.is_some_and(|m| m.full && !["power_off_half", "nc_scene", "bass_button", "mfb_long", "sleep_noise", "buttons_off"].contains(&row.id) && !row.id.ends_with("_more") && !row.id.starts_with("call_"))
+                    || has.contains(&row.id)
+            };
             for row in ROWS.iter().filter(|r| r.id != "firmware" && r.id != "serial") {
-                rows::set_shown(row.id, model.is_some_and(|m| m.full && !["power_off_half", "nc_scene", "bass_button", "mfb_long", "sleep_noise", "buttons_off"].contains(&row.id) && !row.id.ends_with("_more") && !row.id.starts_with("call_")) || has.contains(&row.id) || matches!(row.kind, RowKind::Section), true);
+                let shown = match row.kind {
+                    RowKind::Section => true,
+                    // A page shows while a setting on it does; the about rows always do.
+                    RowKind::Page => row.id == "device" || ROWS.iter().any(|r| r.page == Some(row.id) && has_row(r)),
+                    _ => has_row(row),
+                };
+                rows::set_shown(row.id, shown, true);
             }
             self.told_rows = true;
         }
@@ -303,60 +313,66 @@ const MORE_ACTIONS: [&str; 11] = ["volume_up", "volume_down", "previous", "next"
 const ACTIONS: [&str; settings::ACTIONS as usize] =
     ["volume_up", "volume_down", "previous", "next", "noise_mode", "voice_assistant", "play_pause"];
 
+const CALL: [&str; 2] = ["call_decline", "call_answer"];
+
 const ROWS: &[Row] = &[
     section("noise"),
     Row::choice("nc_scene", &["scene_transport", "scene_outdoor", "scene_indoor", "scene_custom"], 0),
-    Row::choice("anc_kind", &["kind_manual", "kind_adaptive", "kind_transport"], 0),
-    Row::choice("anc_strength", &["level_1", "level_2", "level_3", "level_4", "level_5"], 2),
+    Row::segments("anc_kind", &["kind_manual", "kind_adaptive", "kind_transport"], 0),
+    Row::segments("anc_strength", &["level_1", "level_2", "level_3", "level_4", "level_5"], 2),
     Row::switch("environment", false),
-    Row::choice("transport", &["plane", "train", "bus", "car"], 0),
-    Row::choice("transparency", &["fully", "vocal"], 0),
+    Row::segments("transport", &["plane", "train", "bus", "car"], 0),
+    Row::segments("transparency", &["fully", "vocal"], 0),
     Row::switch("wind", false),
-    section("touch"),
-    Row::switch("touch_lock", false),
-    Row::switch("touch_tone", false),
-    Row::choice("left_single", &ACTIONS, 0),
-    Row::choice("right_single", &ACTIONS, 0),
-    Row::choice("left_double", &ACTIONS, 0),
-    Row::choice("right_double", &ACTIONS, 0),
-    Row::choice("left_triple", &ACTIONS, 0),
-    Row::choice("right_triple", &ACTIONS, 0),
-    Row::choice("left_long", &ACTIONS, 0),
-    Row::choice("right_long", &ACTIONS, 0),
-    Row::choice("left_single_more", &MORE_ACTIONS, 0),
-    Row::choice("right_single_more", &MORE_ACTIONS, 0),
-    Row::choice("left_double_more", &MORE_ACTIONS, 0),
-    Row::choice("right_double_more", &MORE_ACTIONS, 0),
-    Row::choice("left_triple_more", &MORE_ACTIONS, 0),
-    Row::choice("right_triple_more", &MORE_ACTIONS, 0),
-    Row::choice("left_long_more", &MORE_ACTIONS, 0),
-    Row::choice("right_long_more", &MORE_ACTIONS, 0),
-    Row::choice("call_left_double", &["call_decline", "call_answer"], 0),
-    Row::choice("call_right_double", &["call_decline", "call_answer"], 0),
-    Row::choice("call_left_long", &["call_decline", "call_answer"], 0),
-    Row::choice("call_right_long", &["call_decline", "call_answer"], 0),
-    Row::switch("sleep_noise", false),
-    Row::switch("buttons_off", false),
-    Row::switch("bass_button", false),
-    Row::choice("mfb_long", &["mfb_assistant", "mfb_anka", "mfb_translate", "mfb_nap"], 0),
-    Row::flags("noise_cycle", &["cycle_canceling", "cycle_transparency", "cycle_normal"], 7),
-    section("sound"),
-    Row::switch("ldac", false).hint("ldac_hint"),
-    Row::switch("gaming_mode", false),
-    Row::switch("surround", false),
-    Row::switch("sound_leak", false),
-    Row::switch("volume_limit", false).hint("limit_hint"),
-    Row::choice("volume_limit_db", &["db_75", "db_80", "db_85", "db_90", "db_95", "db_100"], 1),
-    section("device"),
-    Row::switch("auto_pause", false),
-    Row::switch("multipoint", false),
-    Row::switch("wearing_tone", false),
-    Row::switch("low_battery", false),
-    Row::switch("power_off", false),
-    Row::choice("power_off_time", &["min_10", "min_20", "min_30", "min_60"], 0),
-    Row::choice("power_off_half", &["min_30", "min_60", "min_90", "min_120"], 0),
-    Row::new("firmware", RowKind::Status),
-    Row::new("serial", RowKind::Status),
+    Row::page("touch").glyph(Glyph::Touch),
+    Row::page("sound").glyph(Glyph::Wave),
+    Row::page("device").glyph(Glyph::Gear),
+    Row::switch("touch_lock", false).on("touch"),
+    Row::switch("touch_tone", false).on("touch"),
+    section("taps").on("touch"),
+    Row::choice("left_single", &ACTIONS, 0).on("touch"),
+    Row::choice("right_single", &ACTIONS, 0).on("touch"),
+    Row::choice("left_double", &ACTIONS, 0).on("touch"),
+    Row::choice("right_double", &ACTIONS, 0).on("touch"),
+    Row::choice("left_triple", &ACTIONS, 0).on("touch"),
+    Row::choice("right_triple", &ACTIONS, 0).on("touch"),
+    Row::choice("left_long", &ACTIONS, 0).on("touch"),
+    Row::choice("right_long", &ACTIONS, 0).on("touch"),
+    Row::choice("left_single_more", &MORE_ACTIONS, 0).on("touch"),
+    Row::choice("right_single_more", &MORE_ACTIONS, 0).on("touch"),
+    Row::choice("left_double_more", &MORE_ACTIONS, 0).on("touch"),
+    Row::choice("right_double_more", &MORE_ACTIONS, 0).on("touch"),
+    Row::choice("left_triple_more", &MORE_ACTIONS, 0).on("touch"),
+    Row::choice("right_triple_more", &MORE_ACTIONS, 0).on("touch"),
+    Row::choice("left_long_more", &MORE_ACTIONS, 0).on("touch"),
+    Row::choice("right_long_more", &MORE_ACTIONS, 0).on("touch"),
+    section("calls").on("touch"),
+    Row::segments("call_left_double", &CALL, 0).on("touch"),
+    Row::segments("call_right_double", &CALL, 0).on("touch"),
+    Row::segments("call_left_long", &CALL, 0).on("touch"),
+    Row::segments("call_right_long", &CALL, 0).on("touch"),
+    section("buttons").on("touch"),
+    Row::switch("sleep_noise", false).on("touch"),
+    Row::switch("buttons_off", false).on("touch"),
+    Row::switch("bass_button", false).on("touch"),
+    Row::choice("mfb_long", &["mfb_assistant", "mfb_anka", "mfb_translate", "mfb_nap"], 0).on("touch"),
+    Row::flags("noise_cycle", &["cycle_canceling", "cycle_transparency", "cycle_normal"], 7).on("touch"),
+    Row::switch("ldac", false).hint("ldac_hint").on("sound"),
+    Row::switch("gaming_mode", false).on("sound"),
+    Row::switch("surround", false).on("sound"),
+    Row::switch("sound_leak", false).on("sound"),
+    Row::switch("volume_limit", false).hint("limit_hint").on("sound"),
+    Row::segments("volume_limit_db", &["db_75", "db_80", "db_85", "db_90", "db_95", "db_100"], 1).on("sound"),
+    Row::switch("auto_pause", false).on("device"),
+    Row::switch("multipoint", false).on("device"),
+    Row::switch("wearing_tone", false).on("device"),
+    Row::switch("low_battery", false).on("device"),
+    Row::switch("power_off", false).on("device"),
+    Row::segments("power_off_time", &["min_10", "min_20", "min_30", "min_60"], 0).on("device"),
+    Row::segments("power_off_half", &["min_30", "min_60", "min_90", "min_120"], 0).on("device"),
+    section("device_info").on("device"),
+    Row::new("firmware", RowKind::Status).on("device"),
+    Row::new("serial", RowKind::Status).on("device"),
 ];
 
 /// By name, or by their own service where they were renamed.
