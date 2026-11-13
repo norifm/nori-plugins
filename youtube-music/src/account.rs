@@ -171,7 +171,6 @@ impl<H: Host + Sync> YouTube<H> {
                 self.keep(Some(Kept { cookies, rotated_at: unix_now(), ended: false, quiet: false }));
                 // Maybe another account: served as its own channel.
                 self.forget_channel();
-                self.show_channel();
                 SignInResult::SignedIn(name)
             }
             Err(e) => {
@@ -189,7 +188,6 @@ impl<H: Host + Sync> YouTube<H> {
         self.open.api.set_cookies(None);
         self.keep(None);
         self.forget_channel();
-        self.show_channel();
     }
 
     /// An ended session not yet asked to be quiet: the client reminds to sign in again at start.

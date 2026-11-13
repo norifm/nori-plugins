@@ -1,72 +1,72 @@
-//! Which of the Google account's channels a profile is served as: its own, or the one last switched to
-//! on the plugin's page, kept in the store under the profile's id.
+//! Which of the Google account's channels a profile is served as: its own, or the one chosen on the
+//! profile's page, kept in the store under the profile's id.
 
-use innertube_music as yt;
+use nori_plugin_sdk::provider::Identity;
+use nori_plugin_sdk::types::{Error, ErrorKind};
 use serde::{Deserialize, Serialize};
 
 use crate::host::{block, Host, Wire};
 use crate::YouTube;
 
-/// The row saying which channel the library is.
-pub(crate) const CHANNEL: &str = "channel";
-/// The row switching to the account's next channel.
-pub(crate) const NEXT: &str = "next_channel";
-
-/// A channel switched to: what requests name (none for the account's own), and its name.
+/// A channel chosen: what requests name (none for the account's own).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Chosen {
     pub(crate) page_id: Option<String>,
-    pub(crate) name: String,
 }
 
 fn key(profile: &str) -> String {
     format!("{profile}/channel")
 }
 
-/// Profile `profile`'s channel as kept; None when it was never switched.
+/// Profile `profile`'s channel as kept; None when another was never chosen.
 pub(crate) fn chosen(host: &impl Host, profile: &str) -> Option<Chosen> {
     host.get(&key(profile)).and_then(|j| serde_json::from_slice(&j).ok())
 }
 
 impl<H: Host + Sync> YouTube<H> {
-    /// The page's channel rows: there while signed in, saying which channel the library is.
-    pub(crate) fn show_channel(&self) {
-        let on = self.signed_in();
-        self.host.show(CHANNEL, on);
-        self.host.show(NEXT, on);
-        if !on {
-            return;
+    /// The account's channels, its own first, the one served now chosen; kept for [`Self::choose_channel`].
+    pub(crate) fn channels(&mut self) -> Result<Vec<Identity>, Error> {
+        self.fresh()?;
+        if !self.signed_in() {
+            return Ok(Vec::new());
         }
-        match chosen(&self.host, &self.open.profile) {
-            Some(c) => self.host.status(CHANNEL, "channel_is", &[c.name]),
-            None => self.host.status(CHANNEL, "channel_own", &[]),
+        let r = block(self.open.api.channels(&Wire(&self.host)));
+        let mut list = self.after(r)?;
+        list.sort_by_key(|c| c.page_id.is_some());
+        let now = chosen(&self.host, &self.open.profile).and_then(|c| c.page_id);
+        let shown = list.iter().map(|c| Identity { name: c.name.clone(), detail: c.handle.clone(), picture: c.thumbnail.as_deref().map(crate::cover), chosen: c.page_id == now }).collect();
+        self.open.channels = list;
+        Ok(shown)
+    }
+
+    /// The picture of the channel served now; the channels are listed first when they were not yet.
+    pub(crate) fn channel_picture(&mut self) -> Option<String> {
+        if self.open.channels.is_empty() {
+            self.channels().ok()?;
         }
+        let now = chosen(&self.host, &self.open.profile).and_then(|c| c.page_id);
+        self.open.channels.iter().find(|c| c.page_id == now)?.thumbnail.as_deref().map(crate::cover)
+    }
+
+    /// Serves the profile as [`Self::channels`]' entry `index` from now on.
+    pub(crate) fn choose_channel(&mut self, index: u32) -> Result<(), Error> {
+        let Some(c) = self.open.channels.get(index as usize) else {
+            return Err(Error { kind: ErrorKind::NotFound, detail: format!("no channel {index} listed") });
+        };
+        let page_id = c.page_id.clone();
+        match &page_id {
+            Some(_) => self.host.set(&key(&self.open.profile), &serde_json::to_vec(&Chosen { page_id: page_id.clone() }).unwrap_or_default()),
+            None => self.host.remove(&key(&self.open.profile)),
+        }
+        self.open.api.set_channel(page_id);
+        Ok(())
     }
 
     /// Serves the profile as its account's own channel again.
     pub(crate) fn forget_channel(&mut self) {
         self.host.remove(&key(&self.open.profile));
+        self.open.channels.clear();
         self.open.api.set_channel(None);
-    }
-
-    /// Serves the profile as the account's channel after the one served now, round to the first.
-    pub(crate) fn next_channel(&mut self) {
-        if self.fresh().is_err() || !self.signed_in() {
-            return;
-        }
-        let r = block(self.open.api.channels(&Wire(&self.host)));
-        let list = match self.after(r) {
-            Ok(list) if !list.is_empty() => list,
-            Ok(_) => return,
-            Err(e) => return self.host.log(&format!("YouTube channels: not listed: {}", e.detail)),
-        };
-        let now = chosen(&self.host, &self.open.profile).and_then(|c| c.page_id);
-        let at = list.iter().position(|c| c.page_id == now).map_or(0, |i| (i + 1) % list.len());
-        let next: &yt::Channel = &list[at];
-        let kept = Chosen { page_id: next.page_id.clone(), name: next.name.clone() };
-        self.host.set(&key(&self.open.profile), &serde_json::to_vec(&kept).unwrap_or_default());
-        self.open.api.set_channel(kept.page_id);
-        self.show_channel();
     }
 }

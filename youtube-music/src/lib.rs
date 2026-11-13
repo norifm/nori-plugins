@@ -14,10 +14,10 @@ use std::time::{Duration, Instant};
 
 use innertube_music as yt;
 use nori_plugin_sdk::provider::{
-    AccountState, Change, Field, FieldSpec, LibrarySection, Page, Profile, ProfileRules, ProviderInfo, Request, SignInResult, SignInWay, StarKind, StreamSource, StreamUse,
+    AccountState, Change, Field, FieldSpec, Identity, IdentityKind, LibrarySection, Page, Profile, ProfileRules, ProviderInfo, Request, SignInResult, SignInWay, StarKind, StreamSource, StreamUse,
 };
 use nori_plugin_sdk::types::{Album, AlbumPage, Artist, ArtistAbout, ArtistPage, ArtistRef, Error, ErrorKind, Explicit, Found, Playlist, PlaylistPage, Shelf, Song};
-use nori_plugin_sdk::{Lifecycle, Manifest, Provider, Row, RowKind};
+use nori_plugin_sdk::{Manifest, Provider};
 
 use account::Kept;
 use host::{block, Host, Nori, Wire};
@@ -238,6 +238,8 @@ struct Open {
     kept: Option<Kept>,
     rechecked: bool,
     streams: Streams,
+    /// The account's channels as last listed, which `choose-identity` picks from.
+    channels: Vec<yt::Channel>,
 }
 
 /// The YouTube Music provider, over nori's imports or a test's.
@@ -266,6 +268,7 @@ impl<H: Host + Sync> Provider for YouTube<H> {
         Some(ProviderInfo {
             fields: vec![FieldSpec { field: Field::Name, advanced: false }],
             sign_in: vec![SignInWay::WebPage(yt::auth::SIGN_IN_PAGE.to_string()), SignInWay::Paste],
+            identities: Some(IdentityKind::Channel),
         })
     }
 
@@ -287,8 +290,7 @@ impl<H: Host + Sync> Provider for YouTube<H> {
     }
 
     fn open(&mut self, profile: Profile) {
-        self.load(profile.id);
-        self.show_channel();
+        self.load(profile.id)
     }
 
     /// Signed in, the library's reads are the account's: its saved albums, the artists it subscribes to
@@ -389,13 +391,17 @@ impl<H: Host + Sync> Provider for YouTube<H> {
     fn stop_reminding(&mut self) {
         self.quiet_reminder()
     }
-}
 
-impl<H: Host + Sync> Lifecycle for YouTube<H> {
-    fn action(&mut self, id: String) {
-        if id == channel::NEXT {
-            self.next_channel();
-        }
+    fn identities(&mut self) -> Result<Vec<Identity>, Error> {
+        self.channels()
+    }
+
+    fn choose_identity(&mut self, index: u32) -> Result<(), Error> {
+        self.choose_channel(index)
+    }
+
+    fn account_picture(&mut self) -> Option<String> {
+        self.channel_picture()
     }
 }
 
@@ -414,11 +420,10 @@ const MANIFEST: Manifest = Manifest {
         "lh3.googleusercontent.com",
     ],
     signin: &["*.youtube.com"],
-    rows: &[Row::new(channel::CHANNEL, RowKind::Status), Row::new(channel::NEXT, RowKind::Action)],
     ..Manifest::new("fm.nori.youtube-music")
 };
 
-nori_plugin_sdk::plugin!(YouTube, MANIFEST, provider, lifecycle);
+nori_plugin_sdk::plugin!(YouTube, MANIFEST, provider);
 
 #[cfg(test)]
 mod tests;
