@@ -29,6 +29,9 @@ const ID_PREFIX: &str = "yt-";
 /// Songs fetched ahead of the one playing: each costs a player request and a whole download.
 const AHEAD: u32 = 1;
 
+/// The account's list of podcast episodes saved for later, among its playlists.
+const EPISODES: &str = "VLSE";
+
 /// nori's id for a YouTube id.
 fn id(raw: &str) -> String {
     format!("{ID_PREFIX}{raw}")
@@ -42,6 +45,11 @@ fn raw_id(id: &str) -> Option<&str> {
 /// The YouTube id inside nori's `id`, or a parse error naming it.
 fn raw(id: &str) -> Result<&str, Error> {
     raw_id(id).ok_or_else(|| Error { kind: ErrorKind::Parse, detail: format!("{id} is no YouTube id") })
+}
+
+/// The YouTube ids of nori's song `ids`.
+fn videos(ids: &[String]) -> Result<Vec<String>, Error> {
+    ids.iter().map(|id| raw(id).map(str::to_string)).collect()
 }
 
 /// A request YouTube Music has nowhere to send.
@@ -59,6 +67,7 @@ fn error(e: yt::Error<Error>) -> Error {
         yt::Error::Unplayable(reason) => (ErrorKind::Refused, format!("YouTube will not play it: {reason}")),
         yt::Error::SignedOut => (ErrorKind::Unauthorized, "signed out of YouTube Music".into()),
         yt::Error::Refused => (ErrorKind::Refused, "YouTube Music answered as if signed out".into()),
+        yt::Error::Unchanged(status) => (ErrorKind::Refused, format!("YouTube Music left it as it was: {status}")),
     };
     Error { kind, detail }
 }
@@ -326,7 +335,8 @@ impl<H: Host + Sync> Provider for YouTube<H> {
             Request::ArtistAbout(id) => Page::About(artist_page(self.after(block(api.artist(t, raw(&id)?)))?).1),
             Request::Playlist(id) => Page::Playlist(playlist_page(self.after(block(api.playlist(t, raw(&id)?)))?)),
             Request::HomeFeed => Page::Feed(self.after(block(api.home(t)))?.into_iter().filter_map(shelf).collect()),
-            Request::Playlists if signed_in => Page::Playlists(self.after(block(api.library_playlists(t)))?.into_iter().map(|p| playlist(p, &[])).collect()),
+            // "Episodes for Later" holds podcasts, which nori doesn't play.
+            Request::Playlists if signed_in => Page::Playlists(self.after(block(api.library_playlists(t)))?.into_iter().filter(|p| p.id != EPISODES).map(|p| playlist(p, &[])).collect()),
             Request::Albums((_, _, 0)) if signed_in => Page::Albums(self.after(block(api.library_albums(t)))?.into_iter().map(album).collect()),
             Request::Artists if signed_in => Page::Artists(self.after(block(api.library_artists(t)))?.into_iter().map(artist).collect()),
             Request::Songs((count, 0)) if signed_in => Page::Songs(songs(self.after(block(api.library_songs(t)))?).into_iter().take(count as usize).collect()),
@@ -338,9 +348,10 @@ impl<H: Host + Sync> Provider for YouTube<H> {
         })
     }
 
-    /// A song's favorite is the account's like, and a song heard goes into the account's history, which
-    /// YouTube's recommendations learn from ("now playing" has nowhere to go there). Nothing else has
-    /// anywhere to go.
+    /// A song's favorite is the account's like, a song heard goes into the account's history, which
+    /// YouTube's recommendations learn from ("now playing" has nowhere to go there), and playlists are
+    /// the account's own: made private, added to, a song taken out, named, deleted. Nothing else has
+    /// anywhere to go (an album's or an artist's favorite: nori keeps those on the device).
     fn write(&mut self, change: Change) -> Result<(), Error> {
         if !self.signed_in() {
             return Err(nowhere());
@@ -357,6 +368,37 @@ impl<H: Host + Sync> Provider for YouTube<H> {
                 self.after(r)
             }
             Change::Scrobble((_, false, _)) => Ok(()),
+            Change::CreatePlaylist((name, songs)) => {
+                self.fresh()?;
+                let r = block(self.open.api.create_playlist(&Wire(&self.host), &name, &videos(&songs)?));
+                self.after(r).map(drop)
+            }
+            Change::AddToPlaylist((id, songs)) => {
+                self.fresh()?;
+                let r = block(self.open.api.add_to_playlist(&Wire(&self.host), raw(&id)?, &videos(&songs)?));
+                self.after(r)
+            }
+            Change::RemoveFromPlaylist((id, index)) => {
+                self.fresh()?;
+                let list = raw(&id)?;
+                let r = block(self.open.api.playlist(&Wire(&self.host), list));
+                // nori's list leaves the live videos out: the index counts the rest.
+                let Some(song) = self.after(r)?.songs.into_iter().filter(|s| !s.live).nth(index as usize) else {
+                    return Err(Error { kind: ErrorKind::NotFound, detail: format!("no song {index} in the playlist") });
+                };
+                let r = block(self.open.api.remove_from_playlist(&Wire(&self.host), list, &song));
+                self.after(r)
+            }
+            Change::RenamePlaylist((id, name)) => {
+                self.fresh()?;
+                let r = block(self.open.api.rename_playlist(&Wire(&self.host), raw(&id)?, &name));
+                self.after(r)
+            }
+            Change::DeletePlaylist(id) => {
+                self.fresh()?;
+                let r = block(self.open.api.delete_playlist(&Wire(&self.host), raw(&id)?));
+                self.after(r)
+            }
             _ => Err(nowhere()),
         }
     }

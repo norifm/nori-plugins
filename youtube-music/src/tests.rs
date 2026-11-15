@@ -351,6 +351,15 @@ fn the_session_is_rotated_before_it_goes_stale() {
     assert_eq!(urls(&yt), [BROWSE], "rotated 30 s ago: not again");
 }
 
+/// The account's saved podcast episodes are no playlist of nori's.
+#[test]
+fn the_podcast_list_is_left_out() {
+    let episodes = yt::Response { status: 200, body: fixture("library_playlists").replace("VLLM", "VLSE").into_bytes(), set_cookies: Vec::new() };
+    let mut yt = signed_in(30, vec![episodes]);
+    let Page::Playlists(v) = yt.read(Request::Playlists).unwrap() else { panic!() };
+    assert_eq!(v.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["yt-VLOLAK5uy_lNVBcjNtiCwq-n95uoxJ-Gd4vsfMkyZNs"]);
+}
+
 /// Cookies an answer changes are kept the moment it comes, not only a rotation's.
 #[test]
 fn rotated_cookies_from_any_answer_are_kept() {
@@ -494,6 +503,32 @@ fn the_library_lists_its_artists_and_songs() {
     assert_eq!(s.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), ["yt-khnokW3Mw24", "yt-Rgrt_8mXrK8"], "as many as asked");
     assert!(matches!(yt.read(Request::Songs((2, 2))), Ok(Page::None)), "one page: none past it");
     assert_eq!(asked(&yt), 2);
+}
+
+/// Signed in, playlists are the account's: made with their songs, added to, a song taken out by its
+/// place in YouTube's list, named and deleted, each under YouTube's own ids. Signed out there is
+/// nowhere to make one.
+#[test]
+fn playlists_are_the_accounts() {
+    let said = |body: &str| yt::Response { status: 200, body: body.as_bytes().to_vec(), set_cookies: Vec::new() };
+    let done = || said(r#"{"status":"STATUS_SUCCEEDED"}"#);
+    let mut yt = signed_in(30, vec![said(r#"{"playlistId":"PL1"}"#), done(), answer(200, "playlist", &[]), done(), done(), said("{}")]);
+    yt.write(Change::CreatePlaylist(("Mine".into(), vec!["yt-v1".into()]))).unwrap();
+    yt.write(Change::AddToPlaylist(("yt-VLPL1".into(), vec!["yt-v2".into()]))).unwrap();
+    yt.write(Change::RemoveFromPlaylist(("yt-VLPL1".into(), 0))).unwrap();
+    yt.write(Change::RenamePlaylist(("yt-VLPL1".into(), "Ours".into()))).unwrap();
+    yt.write(Change::DeletePlaylist("yt-VLPL1".into())).unwrap();
+    let at = |path: &str| format!("https://music.youtube.com/youtubei/v1/{path}");
+    assert_eq!(urls(&yt), [at("playlist/create"), at("browse/edit_playlist"), at("browse"), at("browse/edit_playlist"), at("browse/edit_playlist"), at("playlist/delete")]);
+    let body = |n: usize| -> serde_json::Value { serde_json::from_str(yt.host.asked.lock().unwrap()[n].body.as_deref().unwrap()).unwrap() };
+    assert_eq!(body(0)["videoIds"], serde_json::json!(["v1"]));
+    assert_eq!((&body(1)["playlistId"], &body(1)["actions"][0]["addedVideoId"]), (&serde_json::json!("PL1"), &serde_json::json!("v2")));
+    assert_eq!(body(3)["actions"], serde_json::json!([{ "action": "ACTION_REMOVE_VIDEO", "setVideoId": "56B44F6D10557CC6", "removedVideoId": "khnokW3Mw24" }]));
+    assert_eq!(body(5)["playlistId"], "PL1");
+
+    let mut out = youtube(Vec::new());
+    assert!(matches!(out.write(Change::CreatePlaylist(("Mine".into(), Vec::new()))), Err(Error { kind: ErrorKind::Unsupported, .. })));
+    assert_eq!(asked(&out), 0);
 }
 
 /// Signed in, the account's library, likes and history join; a jam guest only plays.
