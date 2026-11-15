@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use nori_plugin_sdk::http;
 use nori_plugin_sdk::provider::{AccountState, AlbumSort, Change, CodeCheck, LibrarySection, Page, Profile, Request, SignInCode, SignInResult, StarKind, StreamUse};
-use nori_plugin_sdk::types::{Error, ErrorKind, Explicit};
+use nori_plugin_sdk::types::{Error, ErrorKind, Explicit, ReleaseKind};
 use nori_plugin_sdk::Provider;
 
 use crate::host::Host;
@@ -125,7 +125,7 @@ fn a_track_is_a_song_only_when_it_plays_whole() {
     let snipped = mp3().replace(r#""snipped":false"#, r#""snipped":true"#);
     fake.api("/search/tracks?q=lo%20fi&limit=10", &page(&[track(1, "ALLOW", &[aac(), mp3()]), track(2, "SNIP", &[mp3()]), track(3, "BLOCK", &[mp3()]), track(4, "ALLOW", &[aac()]), track(5, "ALLOW", &[&snipped]), track(6, "ALLOW", &[r#"{"url":"u","format":{"protocol":"progressive","mime_type":"audio/mpeg"}}"#])]));
     let stubs = |policy: &str| format!(r#"{},{{"id":9,"policy":"{policy}"}},{{"id":10,"policy":"{policy}"}}"#, track(8, policy, &[mp3()]));
-    fake.api("/search/albums?q=lo%20fi&limit=2", &page(&[format!(r#"{{"id":39,"title":"Previews","tracks":[{}]}}"#, stubs("SNIP")), format!(r#"{{"id":40,"title":"First","track_count":3,"duration":600000,"user":{{"id":7,"username":"maker"}},"release_date":"2023-04-01","tracks":[{}]}}"#, stubs("ALLOW"))]));
+    fake.api("/search/albums?q=lo%20fi&limit=2", &page(&[format!(r#"{{"id":39,"title":"Previews","tracks":[{}]}}"#, stubs("SNIP")), format!(r#"{{"id":40,"title":"First","track_count":3,"duration":600000,"user":{{"id":7,"username":"maker"}},"release_date":"2023-04-01","set_type":"ep","tracks":[{}]}}"#, stubs("ALLOW"))]));
     fake.api("/search/users?q=lo%20fi&limit=3", &page(&[r#"{"id":7,"username":"maker","avatar_url":"https://i1.sndcdn.com/avatars-7-large.jpg"}"#.into()]));
     fake.api("/search/playlists_without_albums?q=lo%20fi&limit=10", &page(&[]));
     let mut p = plugin(fake);
@@ -136,6 +136,7 @@ fn a_track_is_a_song_only_when_it_plays_whole() {
     assert_eq!((s.duration, s.year, s.genre.as_deref(), s.explicit), (185, 2023, Some("Lo-fi"), Explicit::Explicit));
     assert_eq!(s.cover.as_deref(), Some("https://i1.sndcdn.com/artworks-1-t500x500.jpg"));
     assert_eq!(f.albums.iter().map(|a| (a.id.as_str(), a.song_count, a.year)).collect::<Vec<_>>(), [("sc-s40", 3, 2023)], "an album of previews is left out");
+    assert_eq!((f.albums[0].released.as_ref().map(|d| (d.year, d.month, d.day)), f.albums[0].kind), (Some((2023, Some(4), Some(1))), Some(ReleaseKind::Ep)));
     assert_eq!(f.artists[0].id, "sc-u7");
 }
 

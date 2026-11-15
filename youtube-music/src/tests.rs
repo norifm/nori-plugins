@@ -159,7 +159,9 @@ fn records_are_noris_under_yt_ids() {
     assert_eq!((s.id.as_str(), s.artist_id.as_deref(), s.album_id.as_deref(), s.album.as_str()), ("yt-v", Some("yt-UCa"), Some("yt-MPREb_x"), "X"));
     assert_eq!(s.artists.iter().map(|a| a.id.as_deref()).collect::<Vec<_>>(), [Some("yt-UCa"), Some("yt-UCb")]);
     let a = album(yt::Album { id: "MPREb_x".into(), title: "X".into(), artist: "A".into(), artists: vec![yt::ArtistLink { id: "UCa".into(), name: "A".into() }], year: 2013, release_type: Some("Album".into()), thumbnail: None });
-    assert_eq!((a.id.as_str(), a.artist_id.as_deref(), a.year), ("yt-MPREb_x", Some("yt-UCa"), 2013));
+    assert_eq!((a.id.as_str(), a.artist_id.as_deref(), a.year, a.kind), ("yt-MPREb_x", Some("yt-UCa"), 2013, Some(ReleaseKind::Album)));
+    let kind = |release_type: Option<&str>| album(yt::Album { release_type: release_type.map(String::from), ..Default::default() }).kind;
+    assert_eq!([kind(Some("Single")), kind(Some("EP")), kind(None), kind(Some("Audiobook"))], [Some(ReleaseKind::Single), Some(ReleaseKind::Ep), None, None]);
     let d = playlist_page(yt::PlaylistPage { playlist: yt::Playlist { id: "VLp".into(), ..Default::default() }, songs: vec![yt::Song { video_id: "v".into(), duration: 7, ..Default::default() }] });
     assert_eq!((d.playlist.id.as_str(), d.playlist.song_count, d.playlist.duration), ("yt-VLp", 1, 7));
 }
@@ -217,6 +219,15 @@ fn an_artists_about_comes_from_its_page() {
     assert!(v.biography.as_deref().is_some_and(|b| b.starts_with("Daft Punk were")));
     assert!(v.image_url.as_deref().is_some_and(|u| u.ends_with("=w{size}-h{size}-p-l90-rj")), "sized by nori");
     assert!(v.similar.len() == 3 && v.similar.iter().all(|a| a.id.starts_with("yt-UC")));
+}
+
+/// The Singles & EPs shelf's cards say what each is; the Albums shelf's say only the year.
+#[test]
+fn an_artists_singles_say_they_are_singles() {
+    let mut yt = youtube(vec![answer(200, "artist", &[])]);
+    let Page::Artist(v) = yt.read(Request::Artist("yt-UCRr1xG_2WIDs18a6cIiCxeA".into())).unwrap() else { panic!() };
+    let kinds: Vec<(&str, Option<ReleaseKind>)> = v.albums.iter().map(|a| (a.name.as_str(), a.kind)).collect();
+    assert_eq!(&kinds[2..4], [("TRON: Legacy", None), ("GLBTM (Studio Outtakes)", Some(ReleaseKind::Single))]);
 }
 
 /// Signed out, the account's reads are empty pages and writes fail, with no request.

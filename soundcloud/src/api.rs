@@ -1,7 +1,7 @@
 //! SoundCloud's API (api-v2, as its own site speaks it): the records it answers and nori's records made
 //! from them, under `sc-` ids.
 
-use nori_plugin_sdk::types::{Album, AlbumPage, Artist, ArtistAbout, ArtistPage, ArtistRef, Explicit, Playlist, PlaylistPage, Song};
+use nori_plugin_sdk::types::{Album, AlbumPage, Artist, ArtistAbout, ArtistPage, ArtistRef, Explicit, Playlist, PlaylistPage, ReleaseDate, ReleaseKind, Song};
 use serde::Deserialize;
 
 pub(crate) const API: &str = "https://api-v2.soundcloud.com";
@@ -93,6 +93,8 @@ pub(crate) struct Set {
     pub is_album: bool,
     pub release_date: Option<String>,
     pub display_date: Option<String>,
+    /// `album`, `ep`, `single`, `compilation`; empty for a playlist.
+    pub set_type: Option<String>,
 }
 
 /// A set's id: a number, or the URN of a playlist SoundCloud makes
@@ -171,9 +173,28 @@ pub(crate) fn cover(url: &str) -> String {
     url.replace("-large.", "-t500x500.")
 }
 
-/// The year a date (`2024-05-01T…`) starts with; 0 for none.
-fn year(date: Option<&str>) -> u32 {
-    date.and_then(|d| d.get(..4)).and_then(|y| y.parse().ok()).unwrap_or(0)
+/// A date (`2024-05-01T…`, or as far as it goes) as nori's.
+fn date(date: Option<&str>) -> Option<ReleaseDate> {
+    let date = date?;
+    let part = |range: std::ops::Range<usize>| date.get(range).and_then(|p| p.parse::<u32>().ok());
+    let short = |range| part(range).and_then(|p| u8::try_from(p).ok());
+    Some(ReleaseDate { year: part(0..4).filter(|&y| y > 0)?, month: short(5..7), day: short(8..10) })
+}
+
+/// The year a date starts with; 0 for none.
+fn year(d: Option<&str>) -> u32 {
+    date(d).map_or(0, |d| d.year)
+}
+
+/// A set's `set_type` as nori's kind; a playlist's is empty.
+fn release_kind(set_type: &str) -> Option<ReleaseKind> {
+    match set_type {
+        "album" => Some(ReleaseKind::Album),
+        "ep" => Some(ReleaseKind::Ep),
+        "single" => Some(ReleaseKind::Single),
+        "compilation" => Some(ReleaseKind::Compilation),
+        _ => None,
+    }
 }
 
 impl Track {
@@ -296,6 +317,8 @@ impl Set {
             song_count: self.playable(),
             duration: (self.duration / 1000) as u32,
             year: year(self.release_date.as_deref().or(self.display_date.as_deref())),
+            released: date(self.release_date.as_deref().or(self.display_date.as_deref())),
+            kind: self.set_type.as_deref().and_then(release_kind),
             genre: None,
             starred: false,
             external: false,

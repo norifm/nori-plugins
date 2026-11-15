@@ -16,7 +16,7 @@ use innertube_music as yt;
 use nori_plugin_sdk::provider::{
     AccountState, Change, Field, FieldSpec, Identity, IdentityKind, LibrarySection, Page, Profile, ProfileRules, ProviderInfo, Request, SignInResult, SignInWay, StarKind, StreamSource, StreamUse,
 };
-use nori_plugin_sdk::types::{Album, AlbumPage, Artist, ArtistAbout, ArtistPage, ArtistRef, Error, ErrorKind, Explicit, Found, Playlist, PlaylistPage, Shelf, Song};
+use nori_plugin_sdk::types::{Album, AlbumPage, Artist, ArtistAbout, ArtistPage, ArtistRef, Error, ErrorKind, Explicit, Found, Playlist, PlaylistPage, ReleaseKind, Shelf, Song};
 use nori_plugin_sdk::{Manifest, Provider};
 
 use account::Kept;
@@ -119,9 +119,22 @@ fn album(a: yt::Album) -> Album {
         song_count: 0,
         duration: 0,
         year: a.year,
+        // YouTube Music shows only the year.
+        released: None,
+        kind: a.release_type.as_deref().and_then(release_kind),
         genre: None,
         starred: false,
         external: false,
+    }
+}
+
+/// What YouTube Music calls a release ("Single" in "Single • 2026"); an artist's Albums shelf names none.
+fn release_kind(name: &str) -> Option<ReleaseKind> {
+    match name {
+        "Album" => Some(ReleaseKind::Album),
+        "EP" => Some(ReleaseKind::Ep),
+        "Single" => Some(ReleaseKind::Single),
+        _ => None,
     }
 }
 
