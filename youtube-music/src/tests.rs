@@ -351,6 +351,19 @@ fn the_session_is_rotated_before_it_goes_stale() {
     assert_eq!(urls(&yt), [BROWSE], "rotated 30 s ago: not again");
 }
 
+/// nori changes the playlists that name no owner: the account's own. The liked songs' list and
+/// another's page name who made them.
+#[test]
+fn only_the_accounts_own_playlists_name_no_owner() {
+    let mut yt = signed_in(30, vec![answer(200, "library_playlists", &[]), answer(200, "playlist", &[])]);
+    let Page::Playlists(v) = yt.read(Request::Playlists).unwrap() else { panic!() };
+    assert_eq!(v.iter().find(|p| p.id == "yt-VLLM").unwrap().owner.as_deref(), Some("YouTube Music"));
+    let Page::Playlist(theirs) = yt.read(Request::Playlist("yt-VLx".into())).unwrap() else { panic!() };
+    assert!(theirs.playlist.owner.is_some());
+    let own = yt::Playlist { own: true, author: Some("Me".into()), ..Default::default() };
+    assert_eq!(playlist_page(yt::PlaylistPage { playlist: own, songs: Vec::new() }).playlist.owner, None);
+}
+
 /// The account's saved podcast episodes are no playlist of nori's.
 #[test]
 fn the_podcast_list_is_left_out() {

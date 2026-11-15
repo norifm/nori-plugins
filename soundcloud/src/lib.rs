@@ -257,12 +257,24 @@ impl<H: Host> SoundCloud<H> {
     /// client id; all refused again, a session ends: one part of the API may refuse a session another
     /// takes. What the account may not do (403) fails alone.
     fn ask_each(&mut self, method: Method, paths: &[String]) -> Result<Vec<Result<Vec<u8>, Error>>, Error> {
+        self.send_each(method, paths, None)
+    }
+
+    /// [`Self::ask_each`], each request carrying `body` as JSON when there is one.
+    fn send_each(&mut self, method: Method, paths: &[String], body: Option<&serde_json::Value>) -> Result<Vec<Result<Vec<u8>, Error>>, Error> {
         let refused = |a: &Result<http::Response, Error>| matches!(a, Ok(a) if a.status == 401);
         let mut anew = false;
         loop {
             let client_id = self.client_id(anew)?;
             let token = self.signed_in().map(|s| s.token.clone());
-            let requests = paths.iter().map(|p| request(method, &address(p, &client_id), token.as_deref())).collect();
+            let with_body = |mut r: http::Request| {
+                if let Some(body) = body {
+                    r.headers.push(Header { name: "Content-Type".into(), value: "application/json".into() });
+                    r.body = Some(body.to_string().into_bytes());
+                }
+                r
+            };
+            let requests = paths.iter().map(|p| with_body(request(method, &address(p, &client_id), token.as_deref()))).collect();
             let answers = self.host.fetch_all(requests);
             if answers.iter().any(refused) && !anew {
                 anew = true;
@@ -290,6 +302,19 @@ impl<H: Host> SoundCloud<H> {
     /// Each of `paths` answered, as [`Self::ask_each`] asks them; the first not answered fails them all.
     fn ask_all(&mut self, method: Method, paths: &[String]) -> Result<Vec<Vec<u8>>, Error> {
         self.ask_each(method, paths)?.into_iter().collect()
+    }
+
+    /// A change to the account's playlists, `playlist` being what of it changes; its answer.
+    fn change_playlist(&mut self, method: Method, path: String, playlist: serde_json::Value) -> Result<Vec<u8>, Error> {
+        self.send_each(method, &[path], Some(&serde_json::json!({ "playlist": playlist })))?.remove(0)
+    }
+
+    /// Playlist `id`'s path and every track it lists, in its order, unplayable ones too: its tracks
+    /// are changed by sending them all.
+    fn playlist_tracks(&mut self, id: &str) -> Result<(String, Set), Error> {
+        let path = format!("/playlists/{}", id_of(id, 's')?);
+        let set: Set = self.ask(path.clone())?;
+        Ok((path, set))
     }
 
     /// The id SoundCloud knows this device by: the one kept, or a new one.
@@ -448,7 +473,8 @@ impl<H: Host> SoundCloud<H> {
             Request::Artists => Page::Artists(followed(&self.ask_all(Method::Get, &[list("followings")])?[0])?),
             Request::Playlists => {
                 let got = self.ask_all(Method::Get, &[list("playlists_without_albums"), list("playlist_likes")])?;
-                let mut all: Vec<Playlist> = parse::<Collection<Set>>(&got[0])?.collection.iter().map(Set::playlist).collect();
+                // The account's own name no owner: nori lets those be changed.
+                let mut all: Vec<Playlist> = parse::<Collection<Set>>(&got[0])?.collection.iter().map(|s| Playlist { owner: None, ..s.playlist() }).collect();
                 for p in liked_sets(&got[1])?.1 {
                     if !all.iter().any(|o| o.id == p.id) {
                         all.push(p);
@@ -536,7 +562,11 @@ impl<H: Host> Provider for SoundCloud<H> {
             }
             Request::Playlist(id) => {
                 let (set, filled) = self.set(&id)?;
-                Page::Playlist(set.playlist_page(&filled))
+                let mut page = set.playlist_page(&filled);
+                if set.user.as_ref().map(|u| u.id) == self.signed_in().map(|s| s.user) && self.signed_in().is_some() {
+                    page.playlist.owner = None;
+                }
+                Page::Playlist(page)
             }
             Request::Artist(id) => {
                 let (user, albums, tracks) = self.artist(id_of(&id, 'u')?)?;
@@ -547,8 +577,8 @@ impl<H: Host> Provider for SoundCloud<H> {
         })
     }
 
-    /// A song's or album's favorite is the account's like, an artist's its follow; nothing else has
-    /// anywhere to go.
+    /// A song's or album's favorite is the account's like, an artist's its follow, and its playlists
+    /// are made private, added to, a song taken out, named and deleted; nothing else has anywhere to go.
     fn write(&mut self, change: Change) -> Result<(), Error> {
         let nowhere = || error(ErrorKind::Unsupported, "SoundCloud has nowhere to send it");
         let Some(me) = self.signed_in().map(|s| s.user) else { return Err(nowhere()) };
@@ -556,6 +586,35 @@ impl<H: Host> Provider for SoundCloud<H> {
             Change::Star((StarKind::Song, id, on)) => (if on { Method::Put } else { Method::Delete }, format!("/users/{me}/track_likes/{}", id_of(&id, 't')?)),
             Change::Star((StarKind::Album, id, on)) => (if on { Method::Put } else { Method::Delete }, format!("/users/{me}/playlist_likes/{}", id_of(&id, 's')?)),
             Change::Star((StarKind::Artist, id, on)) => (if on { Method::Post } else { Method::Delete }, format!("/me/followings/{}", id_of(&id, 'u')?)),
+            Change::CreatePlaylist((name, songs)) => {
+                let tracks = songs.iter().map(|s| id_of(s, 't')).collect::<Result<Vec<u64>, Error>>()?;
+                return self.change_playlist(Method::Post, "/playlists".into(), serde_json::json!({ "title": name, "sharing": "private", "tracks": tracks })).map(drop);
+            }
+            Change::AddToPlaylist((id, songs)) => {
+                let (path, set) = self.playlist_tracks(&id)?;
+                let mut tracks: Vec<u64> = set.tracks.iter().map(|t| t.id).collect();
+                for s in &songs {
+                    tracks.push(id_of(s, 't')?);
+                }
+                return self.change_playlist(Method::Put, path, serde_json::json!({ "tracks": tracks })).map(drop);
+            }
+            Change::RemoveFromPlaylist((id, index)) => {
+                let path = format!("/playlists/{}", id_of(&id, 's')?);
+                let (set, filled) = self.set(&id)?;
+                // nori lists only the tracks that play: the index is into those, as its page shows them.
+                let shown = set.songs(&filled);
+                let gone = || error(ErrorKind::NotFound, format!("no song {index} in the playlist"));
+                let song = shown.get(index as usize).ok_or_else(gone)?;
+                let (track, nth) = (id_of(&song.id, 't')?, shown[..index as usize].iter().filter(|s| s.id == song.id).count());
+                let at = set.tracks.iter().enumerate().filter(|(_, t)| t.id == track).map(|(i, _)| i).nth(nth).ok_or_else(gone)?;
+                let tracks: Vec<u64> = set.tracks.iter().enumerate().filter(|(i, _)| *i != at).map(|(_, t)| t.id).collect();
+                return self.change_playlist(Method::Put, path, serde_json::json!({ "tracks": tracks })).map(drop);
+            }
+            Change::RenamePlaylist((id, name)) => {
+                let path = format!("/playlists/{}", id_of(&id, 's')?);
+                return self.change_playlist(Method::Put, path, serde_json::json!({ "title": name })).map(drop);
+            }
+            Change::DeletePlaylist(id) => (Method::Delete, format!("/playlists/{}", id_of(&id, 's')?)),
             _ => return Err(nowhere()),
         };
         self.ask_all(method, &[path]).map(drop)

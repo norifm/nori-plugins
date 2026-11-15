@@ -29,6 +29,10 @@ const ID_PREFIX: &str = "yt-";
 /// Songs fetched ahead of the one playing: each costs a player request and a whole download.
 const AHEAD: u32 = 1;
 
+/// The account's liked songs, a list YouTube makes: it is changed by liking, not as a playlist.
+const LIKED: &str = "VLLM";
+/// Who made a playlist that names no one and is not the account's own.
+const YOUTUBE: &str = "YouTube Music";
 /// The account's list of podcast episodes saved for later, among its playlists.
 const EPISODES: &str = "VLSE";
 
@@ -188,22 +192,28 @@ fn artist_page(p: yt::ArtistPage) -> (ArtistPage, ArtistAbout) {
     (ArtistPage { artist: a, albums, top_songs: songs(p.top_songs) }, about)
 }
 
-/// Playlist `l`, of which `songs` are shown.
+/// Playlist `l`, of which `songs` are shown. One naming no owner is the account's own to nori, which
+/// lets it be changed: the liked songs' list, which YouTube makes, names YouTube Music.
 fn playlist(l: yt::Playlist, songs: &[Song]) -> Playlist {
+    let made = (l.id == LIKED).then(|| YOUTUBE.to_string());
     Playlist {
         id: id(&l.id),
         name: l.title,
         comment: l.description,
-        owner: l.author,
+        owner: l.author.or(made),
         song_count: l.song_count.unwrap_or(songs.len() as u32),
         duration: songs.iter().map(|s| s.duration).sum(),
         cover: l.thumbnail.as_deref().map(cover),
     }
 }
 
+/// A playlist's page, which says whether it is the account's own: any other names who made it.
 fn playlist_page(p: yt::PlaylistPage) -> PlaylistPage {
     let songs = songs(p.songs);
-    PlaylistPage { playlist: playlist(p.playlist, &songs), songs }
+    let own = p.playlist.own;
+    let mut playlist = playlist(p.playlist, &songs);
+    playlist.owner = if own { None } else { playlist.owner.or_else(|| Some(YOUTUBE.to_string())) };
+    PlaylistPage { playlist, songs }
 }
 
 /// A feed shelf, its items sorted by kind; none for a shelf of only videos ("Music videos for you"):

@@ -278,6 +278,39 @@ fn a_favorite_is_a_like_or_a_follow() {
     }
 }
 
+/// The account's playlists: made private with their tracks; added to and a song taken out by sending
+/// every track again, in order; named; deleted. Its own name no owner.
+#[test]
+fn playlists_are_made_and_changed() {
+    let mut p = library();
+    let set = format!(r#"{{"id":9,"title":"Mine","user":{{"id":183,"username":"Forss"}},"tracks":[{},{},{{"id":3,"policy":"BLOCK"}}]}}"#, track(1, "ALLOW", &[mp3()]), track(2, "ALLOW", &[mp3()]));
+    p.host.api("/playlists/9", &set);
+    p.host.api("/playlists", "{}");
+    let Page::Playlist(page) = p.read(Request::Playlist("sc-s9".into())).unwrap() else { panic!() };
+    assert_eq!((page.playlist.owner.as_deref(), page.songs.len()), (None, 2));
+    let Page::Playlists(listed) = p.read(Request::Playlists).unwrap() else { panic!() };
+    assert!(listed.iter().any(|l| l.owner.is_none()) && listed.iter().any(|l| l.owner.is_some()), "its own, and those it likes by who made them");
+
+    p.write(Change::CreatePlaylist(("New".into(), vec!["sc-t1".into()]))).unwrap();
+    p.write(Change::AddToPlaylist(("sc-s9".into(), vec!["sc-t7".into()]))).unwrap();
+    p.write(Change::RemoveFromPlaylist(("sc-s9".into(), 1))).unwrap();
+    p.write(Change::RenamePlaylist(("sc-s9".into(), "Ours".into()))).unwrap();
+    p.write(Change::DeletePlaylist("sc-s9".into())).unwrap();
+    let posted = p.host.posted.borrow();
+    let sent: Vec<(&str, &serde_json::Value)> = posted.iter().map(|(url, body)| (url.split('?').next().unwrap().trim_start_matches("https://api-v2.soundcloud.com"), &body["playlist"])).collect();
+    assert_eq!(sent, [
+        ("/playlists", &serde_json::json!({ "title": "New", "sharing": "private", "tracks": [1] })),
+        ("/playlists/9", &serde_json::json!({ "tracks": [1, 2, 3, 7] })),
+        ("/playlists/9", &serde_json::json!({ "tracks": [1, 3] })),
+        ("/playlists/9", &serde_json::json!({ "title": "Ours" })),
+    ]);
+    let asked = p.host.asked.borrow();
+    let (method, url, _) = asked.last().unwrap();
+    assert_eq!((*method, url.split('?').next().unwrap()), (http::Method::Delete, "https://api-v2.soundcloud.com/playlists/9"));
+    drop((posted, asked));
+    assert_eq!(p.write(Change::RemoveFromPlaylist(("sc-s9".into(), 5))).unwrap_err().kind, ErrorKind::NotFound);
+}
+
 #[test]
 fn what_the_account_may_not_do_fails_alone() {
     let mut p = library();
