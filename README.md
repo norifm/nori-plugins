@@ -14,6 +14,7 @@ SDK (`crates/plugin-sdk` in nori; how they work: nori's `docs/developers/plugins
 | `soundcore` | noise control and battery for Soundcore headphones |
 | `speaker` | casts to a nori speaker on your network, an ESP32-S31 board running nori's speaker firmware |
 | `remote-switch` | a switch on Playing on that turns remote control and jams off, as an override of nori's setting |
+| `mix-tuning` | AutoMix's longest transition, tempo change and the parts of a mix, past what its style sets |
 
 ## The repo
 
