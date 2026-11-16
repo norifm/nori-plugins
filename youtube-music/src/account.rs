@@ -86,7 +86,8 @@ impl<H: Host + Sync> YouTube<H> {
         if kept.ended {
             return self.recheck(kept);
         }
-        if !yt::auth::rotation_due(kept.rotated_at, now) {
+        let last = self.open.rotation_failed.map_or(kept.rotated_at, |f| f.max(kept.rotated_at));
+        if !yt::auth::rotation_due(last, now) {
             return;
         }
         if let Some(newer) = stored(&self.host, &self.open.profile).filter(|l| *l != kept) {
@@ -108,6 +109,8 @@ impl<H: Host + Sync> YouTube<H> {
                 self.host.log(&format!("YouTube session: not rotated: {}", error(e).detail));
                 if ended {
                     self.keep(Some(Kept { ended: true, ..kept }));
+                } else {
+                    self.open.rotation_failed = Some(now);
                 }
             }
         }

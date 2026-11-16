@@ -269,6 +269,8 @@ struct Open {
     api: yt::InnerTube,
     kept: Option<Kept>,
     rechecked: bool,
+    /// When a rotation last failed without ending the session; the next waits a whole period.
+    rotation_failed: Option<u64>,
     streams: Streams,
     /// The account's channels as last listed, which `choose-identity` picks from.
     channels: Vec<yt::Channel>,

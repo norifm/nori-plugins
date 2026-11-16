@@ -351,6 +351,17 @@ fn the_session_is_rotated_before_it_goes_stale() {
     assert_eq!(urls(&yt), [BROWSE], "rotated 30 s ago: not again");
 }
 
+/// A rotation that fails without a refusal keeps the session and is not asked again before each call,
+/// only once it is due again.
+#[test]
+fn a_failed_rotation_waits_until_it_is_due_again() {
+    let mut yt = signed_in(601, vec![answer(500, "", &[]), answer(200, "library_albums", &[]), answer(200, "library_playlists", &[])]);
+    assert!(yt.read(Request::Albums((AlbumSort::Alphabetical, 60, 0))).is_ok());
+    assert!(yt.read(Request::Playlists).is_ok());
+    assert_eq!(urls(&yt), [ROTATE, BROWSE, BROWSE]);
+    assert!(!stored(&yt).unwrap().ended, "still signed in");
+}
+
 /// nori changes the playlists that name no owner: the account's own. The liked songs' list and
 /// another's page name who made them.
 #[test]
