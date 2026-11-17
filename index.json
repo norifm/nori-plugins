@@ -357,6 +357,35 @@
       "net": []
     },
     {
+      "id": "fm.nori.sony",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "api": 6,
+          "released": "2026-11-17",
+          "url": "https://github.com/norifm/nori-plugins/releases/download/sony-0.1.0/sony-0.1.0.noriplugin",
+          "sha256": "299323f6fbcb83c0b75d2db2e3756c029bde1fad113c1862d8ace27e1873c606"
+        }
+      ],
+      "name": "Sony",
+      "about": "Battery, noise control and settings for Sony headphones.",
+      "source": "https://github.com/norifm/nori-plugins/tree/sony-0.1.0/sony",
+      "points": [
+        "lifecycle",
+        "hooks",
+        "device-control"
+      ],
+      "imports": [
+        "bluetooth",
+        "log",
+        "rows",
+        "types"
+      ],
+      "net": [],
+      "readme": "https://raw.githubusercontent.com/norifm/nori-plugins/main/sony/README.md",
+      "icon": "https://raw.githubusercontent.com/norifm/nori-plugins/main/sony/icon.png"
+    },
+    {
       "id": "fm.nori.soundcloud",
       "versions": [
         {
