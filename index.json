@@ -290,6 +290,13 @@
       "id": "fm.nori.remote-switch",
       "versions": [
         {
+          "version": "0.2.0",
+          "api": 7,
+          "released": "2026-11-18",
+          "url": "https://github.com/norifm/nori-plugins/releases/download/remote-switch-0.2.0/remote-switch-0.2.0.noriplugin",
+          "sha256": "4322f8a11a009491030bf300a6262c1ca0f9b281a7abe4c9c189457110927210"
+        },
+        {
           "version": "0.1.0",
           "api": 6,
           "released": "2026-11-16",
@@ -299,12 +306,13 @@
       ],
       "name": "Remote switch",
       "about": "Remote control and jams, switched off from Playing on without changing your setting.",
-      "source": "https://github.com/norifm/nori-plugins/tree/remote-switch-0.1.0/remote-switch",
+      "source": "https://github.com/norifm/nori-plugins/tree/remote-switch-0.2.0/remote-switch",
       "points": [
         "lifecycle"
       ],
       "imports": [
         "rows",
+        "session",
         "settings",
         "types"
       ],
