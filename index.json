@@ -324,6 +324,13 @@
       "id": "fm.nori.showcase",
       "versions": [
         {
+          "version": "0.7.0",
+          "api": 7,
+          "released": "2026-11-18",
+          "url": "https://github.com/norifm/nori-plugins/releases/download/showcase-0.7.0/showcase-0.7.0.noriplugin",
+          "sha256": "7e811fc4c0a775eb7a6d13929fcc1c72fb98d34428209953a51be16855e18add"
+        },
+        {
           "version": "0.6.0",
           "api": 6,
           "released": "2026-11-15",
@@ -382,7 +389,7 @@
       ],
       "name": "Showcase",
       "about": "Shows every place and kind of row a plugin can fill. It changes nothing.",
-      "source": "https://github.com/norifm/nori-plugins/tree/showcase-0.6.0/showcase",
+      "source": "https://github.com/norifm/nori-plugins/tree/showcase-0.7.0/showcase",
       "readme": "https://raw.githubusercontent.com/norifm/nori-plugins/main/showcase/README.md",
       "icon": "https://raw.githubusercontent.com/norifm/nori-plugins/main/showcase/icon.png",
       "points": [
@@ -392,6 +399,7 @@
       "imports": [
         "notices",
         "rows",
+        "session",
         "types"
       ],
       "net": []
