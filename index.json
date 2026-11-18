@@ -118,6 +118,13 @@
       "id": "fm.nori.orbit",
       "versions": [
         {
+          "version": "0.7.0",
+          "api": 7,
+          "released": "2026-11-18",
+          "url": "https://github.com/norifm/nori-plugins/releases/download/orbit-0.7.0/orbit-0.7.0.noriplugin",
+          "sha256": "e8e6014b01d0e63fb9c23692e8e2ae67b1f0b7b40b38db67373109870dd01d21"
+        },
+        {
           "version": "0.6.0",
           "api": 6,
           "released": "2026-11-15",
@@ -176,13 +183,14 @@
       ],
       "name": "Orbit",
       "about": "The music circles your head. Best on headphones.",
-      "source": "https://github.com/norifm/nori-plugins/tree/orbit-0.6.0/orbit",
+      "source": "https://github.com/norifm/nori-plugins/tree/orbit-0.7.0/orbit",
       "readme": "https://raw.githubusercontent.com/norifm/nori-plugins/main/orbit/README.md",
       "icon": "https://raw.githubusercontent.com/norifm/nori-plugins/main/orbit/icon.png",
       "points": [
         "sound-stage"
       ],
       "imports": [
+        "session",
         "types"
       ],
       "net": []
