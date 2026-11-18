@@ -4,6 +4,13 @@
       "id": "fm.nori.mix-tuning",
       "versions": [
         {
+          "version": "0.2.0",
+          "api": 7,
+          "released": "2026-11-18",
+          "url": "https://github.com/norifm/nori-plugins/releases/download/mix-tuning-0.2.0/mix-tuning-0.2.0.noriplugin",
+          "sha256": "6e62253eaa028ddcb092b79b8ffd09eb8bb1b7459aa90b30522c008ab3984303"
+        },
+        {
           "version": "0.1.0",
           "api": 6,
           "released": "2026-11-16",
@@ -13,12 +20,13 @@
       ],
       "name": "AutoMix tuning",
       "about": "AutoMix's longest transition, tempo change and the parts of a mix, past what its style sets.",
-      "source": "https://github.com/norifm/nori-plugins/tree/mix-tuning-0.1.0/mix-tuning",
+      "source": "https://github.com/norifm/nori-plugins/tree/mix-tuning-0.2.0/mix-tuning",
       "points": [
         "lifecycle"
       ],
       "imports": [
         "rows",
+        "session",
         "settings",
         "types"
       ],
