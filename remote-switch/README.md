@@ -1,11 +1,11 @@
 # Remote switch
 
-A switch for remote control and jams on the Playing on sheet. Off, nori stops talking to your other
-devices: it isn't listed or controllable there, and it doesn't keep a connection to the server for it.
+Remote switch puts a **Remote control** switch on the **Playing on** sheet. With it, you turn off remote
+control and jams for a while, without changing your setting.
 
-## Settings
+Turn the switch off, and nori stops talking to your other devices. They do not list this device and
+cannot control it, and it cannot host a jam.
 
-- **Remote control**
-
-The switch only turns remote control off. Your setting in nori stays as it is: turn the switch back on, or
-the plugin off, and nori follows your setting again.
+The switch only turns remote control off. Your **Remote control and jams** setting stays as you set it.
+Turn the switch on again, or turn the plugin off, and nori follows your setting again. When that setting
+is off, the switch cannot turn remote control on.

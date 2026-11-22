@@ -1,47 +1,81 @@
 # nori plugins
 
-nori's own plugins, and its official plugin repo. A plugin is a WebAssembly component built with nori's
-SDK (`crates/plugin-sdk` in nori; how they work: nori's `docs/developers/plugins.md`).
+This repository holds nori's own plugins and the plugin repo that nori lists by default. Each plugin is
+a WebAssembly component built with nori's plugin SDK. To learn how plugins work and how to write one,
+see [Plugins](https://github.com/norifm/nori/blob/master/docs/developers/plugins.md) in nori's developer
+docs.
 
-| plugin | what |
-|---|---|
-| `orbit` | a sound stage: the music circles your head |
-| `playback` | speed, pitch, skipping silence and what previous does, as overrides of nori's values |
-| `youtube-music` | YouTube Music as a provider: a kind of profile to add |
-| `soundcloud` | SoundCloud as a provider: search and play, and signed in your library (likes, playlists, albums, those you follow) and stream |
-| `showcase` | one of every place and kind of row a plugin can fill, for trying them out |
-| `moving-covers` | an album's moving cover from Apple Music, in the player's sleeve |
-| `soundcore` | noise control and battery for Soundcore headphones |
-| `sony` | noise control, battery and settings for Sony headphones |
-| `speaker` | casts to a nori speaker on your network, an ESP32-S31 board running nori's speaker firmware |
-| `remote-switch` | a switch on Playing on that turns remote control and jams off, as an override of nori's setting |
-| `mix-tuning` | AutoMix's longest transition, tempo change and the parts of a mix, past what its style sets |
+## The plugins
+
+| Plugin | What it adds | Extension points |
+|---|---|---|
+| `mix-tuning` | AutoMix's longest mix, tempo change and parts, past what its style sets | `lifecycle` (overrides) |
+| `moving-covers` | An album's moving cover from Apple Music, in the player | `slots` |
+| `orbit` | A sound effect: the music circles your head | `sound-stage` |
+| `playback` | Speed, pitch, skipping silence and what previous does | `lifecycle` (overrides) |
+| `remote-switch` | A switch on **Playing on** that turns remote control and jams off | `lifecycle` (overrides) |
+| `showcase` | One of every kind of row and place a plugin can fill, for plugin authors | `lifecycle`, `slots` |
+| `sony` | Battery, noise control and settings for Sony headphones | `device-control`, `hooks`, `lifecycle` |
+| `soundcloud` | SoundCloud as a kind of profile | `provider` |
+| `soundcore` | Battery, noise control and settings for Soundcore headphones | `device-control`, `hooks`, `lifecycle` |
+| `speaker` | Casting to a nori speaker on your network | `lifecycle`, `hooks` |
+| `youtube-music` | YouTube Music as a kind of profile | `provider` |
+
+Each plugin's `README.md` is what listeners read on its page in nori.
+
+## Build a plugin
+
+The toolchain is pinned in `rust-toolchain.toml`, with the `wasm32-wasip2` target. To build one plugin
+and pack it into `dist/`, run:
+
+```sh
+python3 tools/pack.py orbit
+```
+
+`tools/pack.py` with no names packs every plugin. The result is `dist/<plugin>-<version>.noriplugin`, a
+zip of `plugin.wasm`, `strings/`, and the plugin's `icon.png` and `README.md` when it has them. To try
+it, install the file in nori with **Install from file** on the **Get plugins** page.
+
+The SDK comes from nori's repository, at the commit that `Cargo.lock` names. To move it to nori's newest
+commit, run `cargo update -p nori-plugin-sdk`. To build against your own nori checkout while you change
+the SDK, run:
+
+```sh
+cargo build --config 'patch."https://github.com/norifm/nori".nori-plugin-sdk.path="../nori/crates/plugin-sdk"'
+```
+
+That command rewrites `Cargo.lock` to the local path. Do not commit that change.
+
+## Release a plugin
+
+1. In the plugin's `Cargo.toml`, set the new `version`, and commit.
+2. Push the tag `<plugin>-<version>`, for example `orbit-0.8.0`.
+
+The release workflow (`.github/workflows/release.yml`) checks that the tag matches the plugin's
+`Cargo.toml` and runs the plugin's tests. It then packs the plugin, makes a GitHub release with the
+package, and commits the new version to `index.json` on `main`. Nobody writes `index.json` by hand.
+
+Packing is deterministic: the same tag packs to the same bytes on any machine. To check a release, pack
+its tag again and compare the sha256 with the one in `index.json`.
+
+`python3 tools/pack.py --links` points each plugin in `index.json` at its README and icon on `main`,
+and builds nothing.
+
+An icon is a PNG, 256 px square, one color on transparent, at most 256 KiB. nori draws it in the page's
+ink. Each plugin's `icon.svg` is its icon's source.
 
 ## The repo
 
-nori lists this repository by default. A plugin's versions are its GitHub releases, tagged
-`<plugin>-<version>` (`orbit-0.2.0`), each with its `.noriplugin` (a zip of `plugin.wasm`, `strings/`
-and an optional `icon.png` and `README.md`). `index.json` lists every plugin's id, name, about, source,
-README and icon, and every version: its plugin API version, release day, package URL and sha256. nori offers the newest version it
-can run, updates a plugin daily from the repo it came from unless it's held, and can go back to an older
-version.
+nori reads `index.json` from this repository's `main` branch. For each plugin, the index lists its id,
+name, about line, source, README and icon. For each version, it lists the plugin API version, the
+release day, the package's URL and its sha256. nori offers the newest version that its plugin API runs. It updates a plugin at most
+once a day, from the repo the plugin came from, unless the user keeps that version.
 
-To release: set the version in the plugin's `Cargo.toml`, commit, and push the tag
-`<plugin>-<version>`. The release workflow builds it with the pinned toolchain (`rust-toolchain.toml`),
-packs it (`tools/pack.py`), makes the release and adds it to `index.json`; nobody writes the index by
-hand; `tools/pack.py --links` points it at each plugin's README and icon. An icon is a 256 px PNG, one
-color on transparent, which nori draws in the page's ink (`icon.svg` is its source). Packing is deterministic on any machine, so a package can be checked by packing its tag again and
-comparing its sha256.
+Any static host can serve another repo of the same shape: an `index.json` and its packages. Their URLs
+are absolute, or relative to the index. Users add such a repo by the address of its `index.json`.
+nori warns them first. The index format, signatures and API versions are in the
+[plugin reference](https://github.com/norifm/nori/blob/master/docs/developers/plugin-reference.md).
 
-The SDK comes from nori's repository at the commit `Cargo.lock` names; `cargo update -p nori-plugin-sdk`
-moves it to nori's newest. To build against a nori checkout of your own while changing the SDK:
+## License
 
-    cargo build --config 'patch."https://github.com/norifm/nori".nori-plugin-sdk.path="../nori/crates/plugin-sdk"'
-
-That rewrites `Cargo.lock` to the local path; don't commit it.
-
-Another repo is the same shape on any static host: an `index.json` and its packages (URLs absolute, or
-relative to the index). nori adds it by the index's URL, after a warning.
-
-`python3 tools/pack.py [name ...]` packs into `dist/` without releasing, for a `.noriplugin` to install
-by hand.
+AGPL-3.0-or-later, as `Cargo.toml` says.

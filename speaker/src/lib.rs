@@ -1,6 +1,6 @@
 //! Finds nori speakers over mDNS and offers them in nori's devices list; picking one casts to it as a
 //! deep sink. The host speaks the protocol, from the first frame to the buttons
-//! (docs/developers/plugins.md in nori, "Deep sinks").
+//! (docs/developers/plugin-host.md in nori, "Deep sinks").
 
 use nori_plugin_sdk::audio_out::{self, Encoding, Pace};
 use nori_plugin_sdk::cast::{self, Kind, Look, Target};
