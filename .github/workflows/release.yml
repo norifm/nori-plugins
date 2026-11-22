@@ -1,4 +1,4 @@
-# A plugin's release: push a tag <plugin>-<version> (orbit-0.2.0) once its Cargo.toml says that version.
+# A plugin's release: push a tag <plugin>-<version> (soundcore-0.10.1) once its Cargo.toml says that version.
 # The plugin is built with the pinned toolchain (rust-toolchain.toml), packed, released under the tag with
 # its package as the asset, and added to index.json, the repo nori reads, in a commit to main.
 name: release

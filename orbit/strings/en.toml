@@ -1,6 +1,0 @@
-name = "Orbit"
-about = "The music circles your head. Best on headphones."
-speed = "Speed"
-speed_unit = "turns/s"
-width = "Width"
-width_hint = "How far the music swings to each side"

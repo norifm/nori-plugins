@@ -11,17 +11,15 @@ docs.
 |---|---|---|
 | `mix-tuning` | AutoMix's longest mix, tempo change and parts, past what its style sets | `lifecycle` (overrides) |
 | `moving-covers` | An album's moving cover from Apple Music, in the player | `slots` |
-| `orbit` | A sound effect: the music circles your head | `sound-stage` |
-| `playback` | Speed, pitch, skipping silence and what previous does | `lifecycle` (overrides) |
-| `remote-switch` | A switch on **Playing on** that turns remote control and jams off | `lifecycle` (overrides) |
-| `showcase` | One of every kind of row and place a plugin can fill, for plugin authors | `lifecycle`, `slots` |
 | `sony` | Battery, noise control and settings for Sony headphones | `device-control`, `hooks`, `lifecycle` |
 | `soundcloud` | SoundCloud as a kind of profile | `provider` |
 | `soundcore` | Battery, noise control and settings for Soundcore headphones | `device-control`, `hooks`, `lifecycle` |
-| `speaker` | Casting to a nori speaker on your network | `lifecycle`, `hooks` |
 | `youtube-music` | YouTube Music as a kind of profile | `provider` |
 
 Each plugin's `README.md` is what listeners read on its page in nori.
+
+Plugins for nori's developers (its checks' fixtures, examples, our own hardware) are in
+[nori-dev-plugins](https://github.com/norifm/nori-dev-plugins).
 
 ## Build a plugin
 
@@ -29,7 +27,7 @@ The toolchain is pinned in `rust-toolchain.toml`, with the `wasm32-wasip2` targe
 and pack it into `dist/`, run:
 
 ```sh
-python3 tools/pack.py orbit
+python3 tools/pack.py soundcore
 ```
 
 `tools/pack.py` with no names packs every plugin, into `dist/<plugin>-<version>.noriplugin`. To try one,
@@ -48,7 +46,7 @@ That command rewrites `Cargo.lock` to the local path. Do not commit that change.
 ## Release a plugin
 
 1. In the plugin's `Cargo.toml`, set the new `version`, and commit.
-2. Push the tag `<plugin>-<version>`, for example `orbit-0.8.0`.
+2. Push the tag `<plugin>-<version>`, for example `soundcore-0.11.0`.
 
 The release workflow (`.github/workflows/release.yml`) checks that the tag matches the plugin's
 `Cargo.toml` and runs the plugin's tests. It then packs the plugin, makes a GitHub release with the
