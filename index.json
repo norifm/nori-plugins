@@ -276,6 +276,13 @@
       "id": "fm.nori.soundcore",
       "versions": [
         {
+          "version": "0.10.2",
+          "api": 7,
+          "released": "2026-11-22",
+          "url": "https://github.com/norifm/nori-plugins/releases/download/soundcore-0.10.2/soundcore-0.10.2.noriplugin",
+          "sha256": "cd729d2f132aad5583d6796b33de4f3e682059ed2c5cc08601c359a4703592ce"
+        },
+        {
           "version": "0.10.1",
           "api": 7,
           "released": "2026-11-22",
@@ -327,7 +334,7 @@
       ],
       "name": "Soundcore",
       "about": "Battery, noise control and settings for Soundcore headphones.",
-      "source": "https://github.com/norifm/nori-plugins/tree/soundcore-0.10.1/soundcore",
+      "source": "https://github.com/norifm/nori-plugins/tree/soundcore-0.10.2/soundcore",
       "points": [
         "lifecycle",
         "hooks",
@@ -342,7 +349,8 @@
       ],
       "net": [],
       "readme": "https://raw.githubusercontent.com/norifm/nori-plugins/main/soundcore/README.md",
-      "icon": "https://raw.githubusercontent.com/norifm/nori-plugins/main/soundcore/icon.png"
+      "icon": "https://raw.githubusercontent.com/norifm/nori-plugins/main/soundcore/icon.png",
+      "category": "device"
     },
     {
       "id": "fm.nori.youtube-music",
