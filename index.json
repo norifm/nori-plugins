@@ -126,6 +126,13 @@
       "id": "fm.nori.sony",
       "versions": [
         {
+          "version": "0.2.1",
+          "api": 7,
+          "released": "2026-11-22",
+          "url": "https://github.com/norifm/nori-plugins/releases/download/sony-0.2.1/sony-0.2.1.noriplugin",
+          "sha256": "7ec437f7dc55e3214119971cba455b1edd66dcc728b21e94eb9cbc4326159950"
+        },
+        {
           "version": "0.2.0",
           "api": 7,
           "released": "2026-11-18",
@@ -142,7 +149,7 @@
       ],
       "name": "Sony",
       "about": "Battery, noise control and settings for Sony headphones.",
-      "source": "https://github.com/norifm/nori-plugins/tree/sony-0.2.0/sony",
+      "source": "https://github.com/norifm/nori-plugins/tree/sony-0.2.1/sony",
       "points": [
         "lifecycle",
         "hooks",
@@ -157,7 +164,8 @@
       ],
       "net": [],
       "readme": "https://raw.githubusercontent.com/norifm/nori-plugins/main/sony/README.md",
-      "icon": "https://raw.githubusercontent.com/norifm/nori-plugins/main/sony/icon.png"
+      "icon": "https://raw.githubusercontent.com/norifm/nori-plugins/main/sony/icon.png",
+      "category": "device"
     },
     {
       "id": "fm.nori.soundcloud",
