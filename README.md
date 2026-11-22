@@ -32,9 +32,8 @@ and pack it into `dist/`, run:
 python3 tools/pack.py orbit
 ```
 
-`tools/pack.py` with no names packs every plugin. The result is `dist/<plugin>-<version>.noriplugin`, a
-zip of `plugin.wasm`, `strings/`, and the plugin's `icon.png` and `README.md` when it has them. To try
-it, install the file in nori with **Install from file** on the **Get plugins** page.
+`tools/pack.py` with no names packs every plugin, into `dist/<plugin>-<version>.noriplugin`. To try one,
+install the file in nori with **Install from file** on the **Get plugins** page.
 
 The SDK comes from nori's repository, at the commit that `Cargo.lock` names. To move it to nori's newest
 commit, run `cargo update -p nori-plugin-sdk`. To build against your own nori checkout while you change
@@ -55,25 +54,17 @@ The release workflow (`.github/workflows/release.yml`) checks that the tag match
 `Cargo.toml` and runs the plugin's tests. It then packs the plugin, makes a GitHub release with the
 package, and commits the new version to `index.json` on `main`. Nobody writes `index.json` by hand.
 
-Packing is deterministic: the same tag packs to the same bytes on any machine. To check a release, pack
-its tag again and compare the sha256 with the one in `index.json`.
+Packing is deterministic. To check a release, pack its tag again and compare the sha256 with the one in
+`index.json`.
 
 `python3 tools/pack.py --links` points each plugin in `index.json` at its README and icon on `main`,
-and builds nothing.
-
-An icon is a PNG, 256 px square, one color on transparent, at most 256 KiB. nori draws it in the page's
-ink. Each plugin's `icon.svg` is its icon's source.
+and builds nothing. Each plugin's `icon.svg` is its icon's source.
 
 ## The repo
 
-nori reads `index.json` from this repository's `main` branch. For each plugin, the index lists its id,
-name, about line, source, README and icon. For each version, it lists the plugin API version, the
-release day, the package's URL and its sha256. nori offers the newest version that its plugin API runs. It updates a plugin at most
-once a day, from the repo the plugin came from, unless the user keeps that version.
-
-Any static host can serve another repo of the same shape: an `index.json` and its packages. Their URLs
-are absolute, or relative to the index. Users add such a repo by the address of its `index.json`.
-nori warns them first. The index format, signatures and API versions are in the
+nori reads `index.json` from this repository's `main` branch, and offers the newest version of each
+plugin that its plugin API runs. Any static host can serve another repo of the same shape, and users add
+it by the address of its `index.json`. The index format, signatures and API versions are in the
 [plugin reference](https://github.com/norifm/nori/blob/master/docs/developers/plugin-reference.md).
 
 ## License
