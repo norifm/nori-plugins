@@ -69,23 +69,41 @@ def section(wasm, name):
 
 
 def manifest(wasm):
-    """The id, version, API version, extension point bits and hosts the SDK's plugin! wrote."""
+    """The id, version, API version, extension point bits, hosts and category the SDK's plugin! wrote."""
     b = section(wasm, "nori:plugin")
     if b is None:
         sys.exit("no nori:plugin section: built without the SDK's plugin!")
     at = 1
-    def text():
+    def take(n):
         nonlocal at
-        n = int.from_bytes(b[at:at + 2], "little")
-        at += 2 + n
-        return b[at - n:at].decode()
+        at += n
+        return b[at - n:at]
+    def u16():
+        return int.from_bytes(take(2), "little")
+    def text():
+        return take(u16()).decode()
+    def texts():
+        return [text() for _ in range(u16())]
     plugin_id, version = text(), text()
-    api, bits = int.from_bytes(b[at:at + 4], "little"), int.from_bytes(b[at + 4:at + 8], "little")
-    # Past the stage's byte.
-    at += 9
-    count = int.from_bytes(b[at:at + 2], "little")
-    at += 2
-    return plugin_id, version, api, bits, [text() for _ in range(count)]
+    api, bits = int.from_bytes(take(4), "little"), int.from_bytes(take(4), "little")
+    take(1)  # the stage
+    net, _signin, _overrides = texts(), texts(), texts()
+    for _ in range(u16()):  # rows: id, kind, options, four numbers, hint, unit, decimals, url
+        text(), take(1), texts(), take(32), text(), text(), take(1), text()
+    for _ in range(u16()):  # menu actions: id, glyph, kinds
+        text(), take(1), take(u16())
+    take(u16())  # places
+    for _ in range(u16()):  # devices: name, service, vendor
+        text(), text(), take(4)
+    take(u16()), take(u16()), take(u16())  # permissions, hooks, wakes
+    texts(), take(4)  # commands, the cache's quota
+    for _ in range(u16()):  # assets: name, url, size, sha256
+        text(), text(), take(8), text()
+    for _ in range(u16()):  # each row's page and glyph
+        text(), take(1)
+    # Absent from a plugin built before categories, which is Other.
+    category = CATEGORIES[min(b[at], len(CATEGORIES) - 1)] if at < len(b) else CATEGORIES[-1]
+    return plugin_id, version, api, bits, net, category
 
 
 def imports(wasm):
@@ -101,13 +119,15 @@ def imports(wasm):
 
 
 def needs(wasm):
-    """What an index says a plugin reaches for, which a client judges it by."""
-    _, _, _, bits, net = manifest(wasm)
-    return {"points": points(bits), "imports": imports(wasm), "net": net}
+    """What an index says a plugin reaches for, which a client judges it by, and the page it is listed on."""
+    _, _, _, bits, net, category = manifest(wasm)
+    return {"points": points(bits), "imports": imports(wasm), "net": net, "category": category}
 
 
 
 REPO = "https://github.com/norifm/nori-plugins"
+# nori's `section::CATEGORIES`, in the order the SDK writes them.
+CATEGORIES = ["service", "device", "playback", "other"]
 # nori's `POINTS`, in the order of its manifest's bits.
 POINTS = ["lifecycle", "hooks", "provider", "sound-stage", "preparation", "automix", "deciders", "slots", "device-control", "lyrics", "scrobbler"]
 

@@ -17,7 +17,7 @@ use nori_plugin_sdk::provider::{
     AccountState, Change, Field, FieldSpec, Identity, IdentityKind, LibrarySection, Page, Profile, ProfileRules, ProviderInfo, Request, SignInResult, SignInWay, StarKind, StreamSource, StreamUse,
 };
 use nori_plugin_sdk::types::{Album, AlbumPage, Artist, ArtistAbout, ArtistPage, ArtistRef, Error, ErrorKind, Explicit, Found, Playlist, PlaylistPage, ReleaseKind, Shelf, Song};
-use nori_plugin_sdk::{Manifest, Provider};
+use nori_plugin_sdk::{Category, Manifest, Provider};
 
 use account::Kept;
 use host::{block, Host, Nori, Wire};
@@ -487,6 +487,7 @@ const MANIFEST: Manifest = Manifest {
         "lh3.googleusercontent.com",
     ],
     signin: &["*.youtube.com"],
+    category: Category::Service,
     ..Manifest::new("fm.nori.youtube-music")
 };
 

@@ -5,7 +5,7 @@ use nori_plugin_sdk::device_control::{Battery, DeviceState, Noise};
 use nori_plugin_sdk::hooks::Event;
 use nori_plugin_sdk::types::Value;
 use nori_plugin_sdk::{log, rows};
-use nori_plugin_sdk::{DeviceControl, DeviceFilter, Glyph, Hooks, Lifecycle, Manifest, Row, RowKind};
+use nori_plugin_sdk::{Category, DeviceControl, DeviceFilter, Glyph, Hooks, Lifecycle, Manifest, Row, RowKind};
 
 use crate::protocol::{Conversation, Kind, Link, Message};
 use crate::settings::{self, Change, Mode, V};
@@ -312,6 +312,6 @@ const DEVICES: &[DeviceFilter] = &[
     DeviceFilter::ANY.name("ULT WEAR*"),
 ];
 
-const MANIFEST: Manifest = Manifest { rows: ROWS, devices: DEVICES, ..Manifest::new("fm.nori.sony") };
+const MANIFEST: Manifest = Manifest { rows: ROWS, devices: DEVICES, category: Category::Device, ..Manifest::new("fm.nori.sony") };
 
 nori_plugin_sdk::plugin!(Sony, MANIFEST, device_control, hooks, lifecycle);

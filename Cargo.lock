@@ -188,7 +188,7 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "mix-tuning"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "nori-plugin-sdk",
 ]
@@ -203,8 +203,8 @@ dependencies = [
 
 [[package]]
 name = "nori-plugin-sdk"
-version = "0.9.4"
-source = "git+https://github.com/norifm/nori#8174b7b42377e50e7a455f11b7d726f1725a568b"
+version = "0.9.5"
+source = "git+https://github.com/norifm/nori#a0f317bcad77398dd8a7bb98133e0306f906e69f"
 dependencies = [
  "wit-bindgen",
  "wit-parser",
@@ -313,14 +313,14 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "sony"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "nori-plugin-sdk",
 ]
 
 [[package]]
 name = "soundcloud"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "nori-plugin-sdk",
  "serde",
@@ -329,7 +329,7 @@ dependencies = [
 
 [[package]]
 name = "soundcore"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "nori-plugin-sdk",
 ]
@@ -495,7 +495,7 @@ dependencies = [
 
 [[package]]
 name = "youtube-music"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "innertube-music",
  "nori-plugin-sdk",

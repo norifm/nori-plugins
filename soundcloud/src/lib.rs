@@ -18,7 +18,7 @@ use nori_plugin_sdk::provider::{
     AccountState, AlbumSort, Change, CodeCheck, Field, FieldSpec, LibrarySection, Page, Profile, ProfileRules, ProviderInfo, Request, SignInCode, SignInResult, SignInWay, StarKind, StreamSource, StreamUse,
 };
 use nori_plugin_sdk::types::{Album, Artist, Error, ErrorKind, Found, Header, Playlist, Shelf, Song};
-use nori_plugin_sdk::{Manifest, Provider};
+use nori_plugin_sdk::{Category, Manifest, Provider};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
@@ -732,6 +732,7 @@ const MANIFEST: Manifest = Manifest {
         "*.soundcloud.cloud",
     ],
     signin: &["soundcloud.com", "*.soundcloud.com"],
+    category: Category::Service,
     ..Manifest::new("fm.nori.soundcloud")
 };
 

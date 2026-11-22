@@ -3,7 +3,7 @@
 //! `autoMix.*` values. A row left as it starts keeps the style's; turning the plugin off brings them back.
 
 use nori_plugin_sdk::types::Value;
-use nori_plugin_sdk::{rows, settings, Lifecycle, Manifest, Row, RowKind};
+use nori_plugin_sdk::{rows, settings, Category, Lifecycle, Manifest, Row, RowKind};
 
 /// The tempo row's choices after the style's own, in percent.
 const TEMPOS: [f64; 7] = [0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0];
@@ -59,6 +59,7 @@ const MANIFEST: Manifest = Manifest {
         Row::switch("filters", true),
         Row::switch("keep_pitch", true),
     ],
+    category: Category::Playback,
     ..Manifest::new("fm.nori.mix-tuning")
 };
 

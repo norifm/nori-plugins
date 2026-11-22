@@ -7,7 +7,7 @@ use nori_plugin_sdk::device_control::{Battery, DeviceState, Noise};
 use nori_plugin_sdk::hooks::Event;
 use nori_plugin_sdk::{log, rows};
 use nori_plugin_sdk::types::Value;
-use nori_plugin_sdk::{DeviceControl, DeviceFilter, Glyph, Hooks, Lifecycle, Manifest, Row, RowKind};
+use nori_plugin_sdk::{Category, DeviceControl, DeviceFilter, Glyph, Hooks, Lifecycle, Manifest, Row, RowKind};
 
 use crate::protocol::{request, take_packets, Ambient, Link, Status, LDAC, REQUEST_STATE, SET_SOUND_MODES};
 use crate::models::{self, Model};
@@ -409,6 +409,6 @@ const DEVICES: &[DeviceFilter] = &[
 ];
 
 const MANIFEST: Manifest =
-    Manifest { rows: ROWS, devices: DEVICES, ..Manifest::new("fm.nori.soundcore") };
+    Manifest { rows: ROWS, devices: DEVICES, category: Category::Device, ..Manifest::new("fm.nori.soundcore") };
 
 nori_plugin_sdk::plugin!(Soundcore, MANIFEST, device_control, hooks, lifecycle);
