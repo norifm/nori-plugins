@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use nori_plugin_sdk::http;
 use nori_plugin_sdk::provider::{AccountState, AlbumSort, Change, CodeCheck, LibrarySection, Page, Profile, Request, SignInCode, SignInResult, StarKind, StreamUse};
 use nori_plugin_sdk::types::{Error, ErrorKind, Explicit, ReleaseKind};
-use nori_plugin_sdk::Provider;
+use nori_plugin_sdk::{Account, Provider};
 
 use crate::host::Host;
 use crate::{Session, SoundCloud};
@@ -322,6 +322,19 @@ fn what_the_account_may_not_do_fails_alone() {
     same(p.account(), Some(AccountState::SignedIn));
     assert_eq!(pages(&p), before, "the client id is still taken: not asked for again");
     assert!(matches!(p.read(Request::Artists), Ok(Page::Artists(a)) if a.len() == 3), "the library is still the account's");
+}
+
+/// The account is named by its user id while signed in.
+#[test]
+fn the_account_is_its_user_id() {
+    let fake = Fake::default();
+    fake.api("/me", r#"{"id":99,"username":"listener"}"#);
+    let mut p = plugin(fake);
+    same(Account::id(&mut p), None);
+    p.sign_in("2-123-abc".into());
+    same(Account::id(&mut p), Some("99".to_string()));
+    p.sign_out();
+    same(Account::id(&mut p), None);
 }
 
 /// The account's picture is its avatar: kept on signing in, asked for once when a session has none.

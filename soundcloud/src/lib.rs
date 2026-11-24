@@ -18,7 +18,7 @@ use nori_plugin_sdk::provider::{
     AccountState, AlbumSort, Change, CodeCheck, Field, FieldSpec, LibrarySection, Page, Profile, ProfileRules, ProviderInfo, Request, SignInCode, SignInResult, SignInWay, StarKind, StreamSource, StreamUse,
 };
 use nori_plugin_sdk::types::{Album, Artist, Error, ErrorKind, Found, Header, Playlist, Shelf, Song};
-use nori_plugin_sdk::{Category, Manifest, Provider};
+use nori_plugin_sdk::{Account, Category, GuestStreams, Manifest, Provider, SignInCopy};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
@@ -720,6 +720,13 @@ impl<H: Host> Provider for SoundCloud<H> {
     fn stop_reminding(&mut self) {}
 }
 
+/// The signed-in account's SoundCloud user id, which its name and permalink can change around.
+impl<H: Host> Account for SoundCloud<H> {
+    fn id(&mut self) -> Option<String> {
+        self.signed_in().map(|s| s.user.to_string())
+    }
+}
+
 const MANIFEST: Manifest = Manifest {
     net: &[
         "soundcloud.com",
@@ -733,10 +740,14 @@ const MANIFEST: Manifest = Manifest {
     ],
     signin: &["soundcloud.com", "*.soundcloud.com"],
     category: Category::Service,
+    // The site's token on two devices at once is untested.
+    sign_in_copy: SignInCopy::EachDevice,
+    // A stream's playlist address dies about five minutes after SoundCloud gives it.
+    guest_streams: GuestStreams::GuestLookup,
     ..Manifest::new("fm.nori.soundcloud")
 };
 
-nori_plugin_sdk::plugin!(SoundCloud, MANIFEST, provider);
+nori_plugin_sdk::plugin!(SoundCloud, MANIFEST, provider, account);
 
 #[cfg(test)]
 mod tests;
