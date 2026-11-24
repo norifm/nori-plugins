@@ -271,7 +271,7 @@ fn an_unplayable_video_says_why() {
 
 #[test]
 fn a_stream_is_kept_until_shortly_before_it_expires() {
-    let s = yt::Stream { format: yt::Format { itag: 251, url: "u".into(), mime: "audio/webm".into(), bit_rate: 1, length: None }, expires_in: Duration::from_secs(21_540) };
+    let s = yt::Stream { format: yt::Format { itag: 251, url: "u".into(), mime: "audio/webm".into(), bit_rate: 1, length: None }, formats: vec![], expires_in: Duration::from_secs(21_540) };
     let mut streams = Streams::default();
     let t0 = Instant::now();
     streams.keep("v", s.clone(), t0);
