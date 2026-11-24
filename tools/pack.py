@@ -129,7 +129,7 @@ REPO = "https://github.com/norifm/nori-plugins"
 # nori's `section::CATEGORIES`, in the order the SDK writes them.
 CATEGORIES = ["service", "device", "playback", "other"]
 # nori's `POINTS`, in the order of its manifest's bits.
-POINTS = ["lifecycle", "hooks", "provider", "sound-stage", "preparation", "automix", "deciders", "slots", "device-control", "lyrics", "scrobbler"]
+POINTS = ["lifecycle", "hooks", "provider", "sound-stage", "preparation", "automix", "deciders", "slots", "device-control", "lyrics", "scrobbler", "notification", "account"]
 
 args = [a for a in sys.argv[1:] if not a.startswith("--")]
 release = "--release" in sys.argv
