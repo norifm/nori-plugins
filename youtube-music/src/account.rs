@@ -22,6 +22,9 @@ pub(crate) struct Kept {
     /// Ended, and asked not to be reminded of at start.
     #[serde(default)]
     pub(crate) quiet: bool,
+    /// The Google account's id, once asked ([`YouTube::account_id`]).
+    #[serde(default)]
+    pub(crate) account: Option<String>,
 }
 
 /// The store key of profile `profile`'s session.
@@ -102,7 +105,7 @@ impl<H: Host + Sync> YouTube<H> {
             Ok(_) => {
                 self.open.api.take_changed();
                 let cookies = self.open.api.cookies().map_or(kept.cookies, |c| c.header());
-                self.keep(Some(Kept { cookies, rotated_at: now, ended: false, quiet: false }));
+                self.keep(Some(Kept { cookies, rotated_at: now, ended: false, quiet: false, ..kept }));
             }
             Err(e) => {
                 let ended = matches!(e, yt::Error::SignedOut);
@@ -128,7 +131,7 @@ impl<H: Host + Sync> YouTube<H> {
             Ok(_) => {
                 let cookies = probe.cookies().map_or(kept.cookies, |c| c.header());
                 self.open.api.set_cookies(Some(yt::Cookies::parse(&cookies)));
-                self.keep(Some(Kept { cookies, rotated_at: unix_now(), ended: false, quiet: false }));
+                self.keep(Some(Kept { cookies, rotated_at: unix_now(), ended: false, quiet: false, ..kept }));
             }
             Err(e) => self.host.log(&format!("YouTube session: still ended: {}", error(e).detail)),
         }
@@ -171,7 +174,7 @@ impl<H: Host + Sync> YouTube<H> {
                 let cookies = self.open.api.cookies().map(|c| c.header()).unwrap_or_default();
                 self.open.api.take_changed();
                 // Fresh from the browser: it was just rotated.
-                self.keep(Some(Kept { cookies, rotated_at: unix_now(), ended: false, quiet: false }));
+                self.keep(Some(Kept { cookies, rotated_at: unix_now(), ended: false, quiet: false, account: None }));
                 // Maybe another account: served as its own channel.
                 self.forget_channel();
                 SignInResult::SignedIn(name)
@@ -184,6 +187,24 @@ impl<H: Host + Sync> YouTube<H> {
                 }
             }
         }
+    }
+
+    /// The signed-in Google account's id, which its channel list names (innertube-music's
+    /// `Channel::account_id`): the account part of YouTube's data sync id, which names neither a channel
+    /// nor a name. Asked once per sign-in and kept with the session; None while signed out.
+    pub(crate) fn account_id(&mut self) -> Option<String> {
+        if !self.signed_in() {
+            return None;
+        }
+        if let Some(id) = self.open.kept.as_ref().and_then(|k| k.account.clone()) {
+            return Some(id);
+        }
+        self.fresh().ok()?;
+        let r = block(self.open.api.channels(&Wire(&self.host)));
+        let id = self.after(r).ok()?.into_iter().find_map(|c| c.account_id)?;
+        let kept = self.open.kept.clone()?;
+        self.keep(Some(Kept { account: Some(id.clone()), ..kept }));
+        Some(id)
     }
 
     /// Forgets the session's cookies here.

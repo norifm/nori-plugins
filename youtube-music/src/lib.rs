@@ -17,7 +17,7 @@ use nori_plugin_sdk::provider::{
     AccountState, Change, Field, FieldSpec, Identity, IdentityKind, LibrarySection, Page, Profile, ProfileRules, ProviderInfo, Request, SignInResult, SignInWay, StarKind, StreamSource, StreamUse,
 };
 use nori_plugin_sdk::types::{Album, AlbumPage, Artist, ArtistAbout, ArtistPage, ArtistRef, Error, ErrorKind, Explicit, Found, Playlist, PlaylistPage, ReleaseKind, Shelf, Song};
-use nori_plugin_sdk::{Category, Manifest, Provider};
+use nori_plugin_sdk::{Account, Category, GuestStreams, Manifest, Provider, SignInCopy};
 
 use account::Kept;
 use host::{block, Host, Nori, Wire};
@@ -472,6 +472,12 @@ impl<H: Host + Sync> Provider for YouTube<H> {
     }
 }
 
+impl<H: Host + Sync> Account for YouTube<H> {
+    fn id(&mut self) -> Option<String> {
+        self.account_id()
+    }
+}
+
 const MANIFEST: Manifest = Manifest {
     net: &[
         "music.youtube.com",
@@ -488,10 +494,14 @@ const MANIFEST: Manifest = Manifest {
     ],
     signin: &["*.youtube.com"],
     category: Category::Service,
+    // A browser session that YouTube keeps replacing.
+    sign_in_copy: SignInCopy::EachDevice,
+    // An address names the device that asked, but YouTube served it to other networks for its six hours.
+    guest_streams: GuestStreams::HostAddress,
     ..Manifest::new("fm.nori.youtube-music")
 };
 
-nori_plugin_sdk::plugin!(YouTube, MANIFEST, provider);
+nori_plugin_sdk::plugin!(YouTube, MANIFEST, provider, account);
 
 #[cfg(test)]
 mod tests;

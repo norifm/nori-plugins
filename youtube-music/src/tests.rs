@@ -66,7 +66,7 @@ const SESSION: &str = "SAPISID=sapi; __Secure-3PAPISID=sapi3; __Secure-1PSIDTS=t
 
 /// A store holding profile "yt"'s session of `cookies`, last rotated `ago` seconds before now.
 fn session(cookies: &str, ago: u64, ended: bool) -> BTreeMap<String, Vec<u8>> {
-    let kept = Kept { cookies: cookies.into(), rotated_at: unix_now() - ago, ended, quiet: false };
+    let kept = Kept { cookies: cookies.into(), rotated_at: unix_now() - ago, ended, quiet: false, account: None };
     BTreeMap::from([("yt/session".to_string(), serde_json::to_vec(&kept).unwrap())])
 }
 
@@ -645,4 +645,18 @@ fn signing_out_forgets_the_channel() {
     assert!(channel::chosen(&yt.host, "yt").is_none());
     assert!(yt.identities().unwrap().is_empty());
     assert_eq!(yt.account_picture(), None);
+}
+
+/// The account's id is its channel list's, asked once and kept with the session; signed out there is none.
+#[test]
+fn the_account_is_named_by_its_id_once_asked() {
+    let mut yt = signed_in(30, vec![answer(200, "accounts_list", &[])]);
+    assert_eq!(yt.account_id().as_deref(), Some("100000000000000000002"));
+    assert_eq!(yt.account_id().as_deref(), Some("100000000000000000002"), "kept");
+    assert_eq!(urls(&yt), ["https://www.youtube.com/youtubei/v1/account/accounts_list"]);
+    let store = yt.host.store.lock().unwrap().clone();
+    assert_eq!(opened(store, Vec::new()).account_id().as_deref(), Some("100000000000000000002"), "kept with the session");
+    let mut out = youtube(vec![answer(200, "accounts_list", &[])]);
+    assert_eq!(out.account_id(), None);
+    assert!(urls(&out).is_empty());
 }
