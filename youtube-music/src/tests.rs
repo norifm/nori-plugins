@@ -221,6 +221,25 @@ fn an_artists_about_comes_from_its_page() {
     assert!(v.similar.len() == 3 && v.similar.iter().all(|a| a.id.starts_with("yt-UC")));
 }
 
+/// nori reads an artist's page and then its about part: one browse answers both, either way round;
+/// another artist, or the same one read again, asks again.
+#[test]
+fn one_browse_answers_an_artists_page_and_its_about() {
+    const ID: &str = "yt-UCRr1xG_2WIDs18a6cIiCxeA";
+    let mut yt = youtube((0..40).map(|_| answer(200, "artist", &[])).collect());
+    assert!(matches!(yt.read(Request::Artist(ID.into())), Ok(Page::Artist(_))));
+    let one = asked(&yt);
+    assert!(matches!(yt.read(Request::ArtistAbout(ID.into())), Ok(Page::About(a)) if a.biography.is_some()));
+    assert_eq!(asked(&yt), one, "the page's browse answers its about");
+    assert!(matches!(yt.read(Request::ArtistAbout(ID.into())), Ok(Page::About(_))));
+    assert!(matches!(yt.read(Request::Artist(ID.into())), Ok(Page::Artist(_))));
+    assert_eq!(asked(&yt), 2 * one, "about first, then the page");
+    assert!(matches!(yt.read(Request::Artist(ID.into())), Ok(Page::Artist(_))));
+    assert_eq!(asked(&yt), 3 * one, "read again: asked again");
+    assert!(matches!(yt.read(Request::ArtistAbout("yt-UCother".into())), Ok(Page::About(_))));
+    assert_eq!(asked(&yt), 4 * one, "another artist's about");
+}
+
 /// The Singles & EPs shelf's cards say what each is; the Albums shelf's say only the year.
 #[test]
 fn an_artists_singles_say_they_are_singles() {

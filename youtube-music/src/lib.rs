@@ -274,7 +274,21 @@ struct Open {
     streams: Streams,
     /// The account's channels as last listed, which `choose-identity` picks from.
     channels: Vec<yt::Channel>,
+    /// The half of an artist's page not yet handed to nori, which reads the page and its about part
+    /// one after the other.
+    artist: Option<ArtistHalf>,
 }
+
+/// One browse of artist `id` answers both [`Request::Artist`] and [`Request::ArtistAbout`]: the half not
+/// asked for yet, kept from `at` for [`ARTIST_HALF`].
+struct ArtistHalf {
+    id: String,
+    page: Page,
+    at: Instant,
+}
+
+/// How long the other half of an artist's page answers its read.
+const ARTIST_HALF: Duration = Duration::from_secs(60);
 
 /// The YouTube Music provider, over nori's imports or a test's.
 #[derive(Default)]
@@ -284,6 +298,22 @@ struct YouTube<H = Nori> {
 }
 
 impl<H: Host + Sync> YouTube<H> {
+    /// Artist `id`'s page, or its about part when `about`: the half kept from the browse that answered
+    /// the other, else browsed, the other half kept.
+    fn artist(&mut self, id: &str, about: bool) -> Result<Page, Error> {
+        let now = Instant::now();
+        if let Some(k) = self.open.artist.take() {
+            if k.id == id && now.duration_since(k.at) < ARTIST_HALF && matches!(k.page, Page::About(_)) == about {
+                return Ok(k.page);
+            }
+        }
+        let r = block(self.open.api.artist(&Wire(&self.host), raw(id)?));
+        let (page, info) = artist_page(self.after(r)?);
+        let (asked, other) = if about { (Page::About(info), Page::Artist(page)) } else { (Page::Artist(page), Page::About(info)) };
+        self.open.artist = Some(ArtistHalf { id: id.to_string(), page: other, at: now });
+        Ok(asked)
+    }
+
     /// The stream `video` plays from, asked of YouTube unless one is kept.
     fn stream(&mut self, video: &str) -> Result<yt::Stream, Error> {
         let now = Instant::now();
@@ -343,8 +373,8 @@ impl<H: Host + Sync> Provider for YouTube<H> {
             }
             Request::Search((query, songs, albums, artists)) => Page::Found(found(self.after(block(api.search(t, &query)))?, songs, albums, artists)),
             Request::Album(id) => Page::Album(album_page(self.after(block(api.album(t, raw(&id)?)))?)),
-            Request::Artist(id) => Page::Artist(artist_page(self.after(block(api.artist(t, raw(&id)?)))?).0),
-            Request::ArtistAbout(id) => Page::About(artist_page(self.after(block(api.artist(t, raw(&id)?)))?).1),
+            Request::Artist(id) => self.artist(&id, false)?,
+            Request::ArtistAbout(id) => self.artist(&id, true)?,
             Request::Playlist(id) => Page::Playlist(playlist_page(self.after(block(api.playlist(t, raw(&id)?)))?)),
             Request::HomeFeed => Page::Feed(self.after(block(api.home(t)))?.into_iter().filter_map(shelf).collect()),
             // "Episodes for Later" holds podcasts, which nori doesn't play.
