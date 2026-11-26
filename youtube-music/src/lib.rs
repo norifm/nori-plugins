@@ -488,6 +488,9 @@ const MANIFEST: Manifest = Manifest {
     ],
     signin: &["*.youtube.com"],
     category: Category::Service,
+    // The sizes YouTube Music's own pages ask for, which its image server keeps ready; others it
+    // makes when asked, a few hundred milliseconds later.
+    cover_sizes: &[226, 544, 1200],
     ..Manifest::new("fm.nori.youtube-music")
 };
 

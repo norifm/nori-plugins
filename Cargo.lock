@@ -203,8 +203,8 @@ dependencies = [
 
 [[package]]
 name = "nori-plugin-sdk"
-version = "0.9.5"
-source = "git+https://github.com/norifm/nori#be5ed4276aaffa0355391024d2a0e97864d35889"
+version = "1.1.1"
+source = "git+https://github.com/norifm/nori#849e1b6447e21eec1da8f3185f9c924196754a44"
 dependencies = [
  "wit-bindgen",
  "wit-parser",
@@ -495,7 +495,7 @@ dependencies = [
 
 [[package]]
 name = "youtube-music"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "innertube-music",
  "nori-plugin-sdk",
