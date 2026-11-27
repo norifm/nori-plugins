@@ -156,7 +156,7 @@ dependencies = [
 [[package]]
 name = "innertube-music"
 version = "0.1.0"
-source = "git+https://github.com/filipton/innertube-music#c7fe90394237d265b059922fa1f41ab4d7fd1a10"
+source = "git+https://github.com/filipton/innertube-music#c33c71eedf85e8982a9c17b1cb5ac2d404cdbc5c"
 dependencies = [
  "serde_json",
  "sha1_smol",
@@ -204,7 +204,7 @@ dependencies = [
 [[package]]
 name = "nori-plugin-sdk"
 version = "1.1.1"
-source = "git+https://github.com/norifm/nori#e0a513824866cc98c2ef8f946ca5d95339546613"
+source = "git+https://github.com/norifm/nori#b34315c74c2cd88aaffe695d3caa5d3d7c235dd5"
 dependencies = [
  "wit-bindgen",
  "wit-parser",

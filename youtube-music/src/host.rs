@@ -3,8 +3,8 @@
 use std::future::Future;
 
 use innertube_music as yt;
-use nori_plugin_sdk::types::{Error, Header};
-use nori_plugin_sdk::{fetching, http, log, store};
+use nori_plugin_sdk::types::{Error, Header, PlaylistPage};
+use nori_plugin_sdk::{fetching, http, log, parts, store};
 
 /// nori's HTTP, the plugin's store and its log.
 pub(crate) trait Host {
@@ -17,6 +17,8 @@ pub(crate) trait Host {
     fn set(&self, key: &str, value: &[u8]);
     fn remove(&self, key: &str);
     fn log(&self, line: &str);
+    /// The playlist read now, as far as it is known, shown before the whole comes.
+    fn show_playlist(&self, page: &PlaylistPage);
 }
 
 /// The host's imports.
@@ -61,6 +63,10 @@ impl Host for Nori {
 
     fn log(&self, line: &str) {
         log::write(log::Level::Info, line)
+    }
+
+    fn show_playlist(&self, page: &PlaylistPage) {
+        parts::show_playlist(page)
     }
 }
 

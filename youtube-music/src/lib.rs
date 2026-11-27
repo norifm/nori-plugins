@@ -375,7 +375,11 @@ impl<H: Host + Sync> Provider for YouTube<H> {
             Request::Album(id) => Page::Album(album_page(self.after(block(api.album(t, raw(&id)?)))?)),
             Request::Artist(id) => self.artist(&id, false)?,
             Request::ArtistAbout(id) => self.artist(&id, true)?,
-            Request::Playlist(id) => Page::Playlist(playlist_page(self.after(block(api.playlist(t, raw(&id)?)))?)),
+            // A long playlist comes a page per request, one after another: what came shows meanwhile.
+            Request::Playlist(id) => {
+                let part = |p: &yt::PlaylistPage| self.host.show_playlist(&playlist_page(p.clone()));
+                Page::Playlist(playlist_page(self.after(block(api.playlist_in_parts(t, raw(&id)?, part)))?))
+            }
             Request::HomeFeed => Page::Feed(self.after(block(api.home(t)))?.into_iter().filter_map(shelf).collect()),
             // "Episodes for Later" holds podcasts, which nori doesn't play.
             Request::Playlists if signed_in => Page::Playlists(self.after(block(api.library_playlists(t)))?.into_iter().filter(|p| p.id != EPISODES).map(|p| playlist(p, &[])).collect()),

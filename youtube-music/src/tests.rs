@@ -13,6 +13,8 @@ struct Fake {
     answers: Mutex<Vec<yt::Response>>,
     asked: Mutex<Vec<yt::Request>>,
     store: Mutex<BTreeMap<String, Vec<u8>>>,
+    /// Each playlist part shown: its songs, and how many requests were asked by then.
+    shown: Mutex<Vec<(usize, usize)>>,
 }
 
 impl Host for Fake {
@@ -34,6 +36,10 @@ impl Host for Fake {
     }
 
     fn log(&self, _: &str) {}
+
+    fn show_playlist(&self, page: &PlaylistPage) {
+        self.shown.lock().unwrap().push((page.songs.len(), self.asked.lock().unwrap().len()));
+    }
 }
 
 fn fixture(name: &str) -> String {
@@ -392,6 +398,26 @@ fn only_the_accounts_own_playlists_name_no_owner() {
     assert!(theirs.playlist.owner.is_some());
     let own = yt::Playlist { own: true, author: Some("Me".into()), ..Default::default() };
     assert_eq!(playlist_page(yt::PlaylistPage { playlist: own, songs: Vec::new() }).playlist.owner, None);
+}
+
+/// A playlist of more than a page shows what came before each next page is asked, then comes whole.
+#[test]
+fn a_long_playlist_shows_each_page_as_it_comes() {
+    // `name`'s songs at `list`, and a next page after them.
+    let continued = |name: &str, list: &str, token: &str| {
+        let mut v: serde_json::Value = serde_json::from_str(&fixture(name)).unwrap();
+        let more = serde_json::json!({ "continuationItemRenderer": { "continuationEndpoint": { "continuationCommand": { "token": token } } } });
+        v.pointer_mut(list).unwrap().as_array_mut().unwrap().push(more);
+        yt::Response { status: 200, body: v.to_string().into_bytes(), set_cookies: Vec::new() }
+    };
+    let first = continued("playlist", "/contents/twoColumnBrowseResultsRenderer/secondaryContents/sectionListRenderer/contents/0/musicPlaylistShelfRenderer/contents", "SECOND");
+    let second = continued("playlist_more", "/onResponseReceivedActions/0/appendContinuationItemsAction/continuationItems", "THIRD");
+    let mut yt = opened(BTreeMap::new(), vec![first, second, answer(200, "playlist_more", &[])]);
+    let Page::Playlist(whole) = yt.read(Request::Playlist("yt-VLx".into())).unwrap() else { panic!() };
+    let shown = yt.host.shown.lock().unwrap().clone();
+    let [(one, asked_one), (two, asked_two)] = shown[..] else { panic!("{shown:?}") };
+    assert_eq!((asked_one, asked_two), (1, 2), "each before the next page was asked");
+    assert!(0 < one && one < two && two < whole.songs.len(), "{one}, {two} of {}", whole.songs.len());
 }
 
 /// The account's saved podcast episodes are no playlist of nori's.
